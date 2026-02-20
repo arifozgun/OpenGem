@@ -21,6 +21,41 @@ interface HttpResponse {
  * This avoids undici's WebAssembly dependency which crashes on
  * memory-constrained shared hosting (cPanel).
  */
+export function nativeFetchStream(url: string, options: RequestOptions = {}): Promise<{ status: number; stream: import('http').IncomingMessage }> {
+    return new Promise((resolve, reject) => {
+        const parsedUrl = new URL(url);
+        const isHttps = parsedUrl.protocol === 'https:';
+        const lib = isHttps ? https : http;
+
+        const headers: Record<string, string> = { ...(options.headers || {}) };
+        if (options.body) {
+            headers['Content-Length'] = Buffer.byteLength(options.body).toString();
+        }
+
+        const reqOptions: https.RequestOptions = {
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port || (isHttps ? 443 : 80),
+            path: parsedUrl.pathname + parsedUrl.search,
+            method: options.method || 'GET',
+            headers,
+        };
+
+        const req = lib.request(reqOptions, (res) => {
+            resolve({ status: res.statusCode || 0, stream: res });
+        });
+
+        req.on('error', (err) => reject(err));
+        req.setTimeout(120000, () => {
+            req.destroy(new Error('Stream request timeout after 120s'));
+        });
+
+        if (options.body) {
+            req.write(options.body);
+        }
+        req.end();
+    });
+}
+
 export function nativeFetch(url: string, options: RequestOptions = {}): Promise<HttpResponse> {
     return new Promise((resolve, reject) => {
         const parsedUrl = new URL(url);

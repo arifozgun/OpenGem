@@ -76,6 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Docs enhancements
     setupCodeTabs();
     setupPlayground();
+    setupChat();
 
     // Handle back/forward navigation
     window.addEventListener('popstate', (e) => {
@@ -110,6 +111,7 @@ function navigateTo(pageName, pushState = true) {
     if (pageName === 'keys') loadApiKeys();
     if (pageName === 'docs') initDocs();
     if (pageName === 'settings') loadSettings();
+    if (pageName === 'chat') initChat();
 }
 
 // ===== DOCUMENTATION =====
@@ -595,6 +597,7 @@ async function loadLogs(force = false) {
             tokensTd.textContent = formatNumber(log.tokensUsed || 0);
 
             row.append(timeTd, emailTd, questionTd, answerTd, tokensTd);
+            row.addEventListener('click', () => showLogDetail(log));
             logsBody.appendChild(row);
         });
     } catch (e) {
@@ -602,6 +605,78 @@ async function loadLogs(force = false) {
         logsBody.innerHTML = '<tr><td colspan="5" class="table-empty" style="color:var(--red)">Failed to load logs.</td></tr>';
     }
 }
+
+function showLogDetail(log) {
+    const modal = document.getElementById('logDetailModal');
+    const body = document.getElementById('logDetailBody');
+    if (!modal || !body) return;
+
+    // Format full timestamp
+    let fullTime = '—';
+    try {
+        const d = new Date(log.timestamp);
+        fullTime = d.toLocaleString('en-US', {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+    } catch { }
+
+    const statusBadge = log.success
+        ? '<span class="badge badge-active">Success</span>'
+        : '<span class="badge badge-inactive">Error</span>';
+
+    body.innerHTML = `
+        <div class="log-detail-grid">
+            <div class="log-detail-item">
+                <span class="log-detail-label">Time</span>
+                <span class="log-detail-value">${fullTime}</span>
+            </div>
+            <div class="log-detail-item">
+                <span class="log-detail-label">Account</span>
+                <span class="log-detail-value" style="font-family:'SF Mono',monospace;font-size:13px;">${log.accountEmail || '—'}</span>
+            </div>
+            <div class="log-detail-item">
+                <span class="log-detail-label">Status</span>
+                <span class="log-detail-value">${statusBadge}</span>
+            </div>
+            <div class="log-detail-item">
+                <span class="log-detail-label">Tokens Used</span>
+                <span class="log-detail-value">${formatNumber(log.tokensUsed || 0)}</span>
+            </div>
+        </div>
+        <div class="log-detail-section">
+            <div class="log-detail-section-title">Question</div>
+            <div class="log-detail-text">${escapeHtml(log.question || '—')}</div>
+        </div>
+        <div class="log-detail-section">
+            <div class="log-detail-section-title">Answer</div>
+            <div class="log-detail-text">${escapeHtml(log.answer || '—')}</div>
+        </div>
+    `;
+
+    modal.classList.remove('hidden');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Log detail modal close handlers
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('logDetailModal');
+    const closeBtn = document.getElementById('logDetailClose');
+
+    if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+    if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+            modal.classList.add('hidden');
+        }
+    });
+});
 
 // ===== API KEYS =====
 
@@ -742,17 +817,25 @@ function formatTime(dateStr) {
 // ===== CODE TABS & PLAYGROUND =====
 
 function setupCodeTabs() {
-    const tabs = document.querySelectorAll('.code-tab');
-    const panels = document.querySelectorAll('.code-panel');
+    // Scope tabs to their parent section so each tab group works independently
+    const tabGroups = document.querySelectorAll('.code-tabs');
 
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            panels.forEach(p => p.classList.remove('active'));
-            tab.classList.add('active');
-            const lang = tab.dataset.lang;
-            const panel = document.querySelector(`.code-panel[data-lang="${lang}"]`);
-            if (panel) panel.classList.add('active');
+    tabGroups.forEach(group => {
+        const section = group.closest('.doc-section') || group.closest('.card');
+        if (!section) return;
+
+        const tabs = group.querySelectorAll('.code-tab');
+        const panels = section.querySelectorAll('.code-panel');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                panels.forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                const lang = tab.dataset.lang;
+                const panel = section.querySelector(`.code-panel[data-lang="${lang}"]`);
+                if (panel) panel.classList.add('active');
+            });
         });
     });
 }
@@ -801,7 +884,7 @@ function setupPlayground() {
             loadingEl.classList.add('hidden');
 
             responseContent.textContent = JSON.stringify(data, null, 2);
-            responseContent.style.color = res.ok ? '#ffffff' : 'var(--red)';
+            responseContent.style.color = res.ok ? 'var(--text-primary)' : 'var(--red)';
 
         } catch (error) {
             loadingEl.classList.add('hidden');
@@ -811,4 +894,423 @@ function setupPlayground() {
             sendBtn.disabled = false;
         }
     });
+}
+
+// ===== AI CHAT =====
+
+let chatHistory = []; // Multi-turn conversation array
+let chatInitialized = false;
+
+function initChat() {
+    // Focus the input when navigating to chat
+    const input = document.getElementById('chatInput');
+    if (input) setTimeout(() => input.focus(), 100);
+}
+
+function setupChat() {
+    const sendBtn = document.getElementById('chatSendBtn');
+    const input = document.getElementById('chatInput');
+    const newChatBtn = document.getElementById('newChatBtn');
+
+    if (!sendBtn || !input) return;
+
+    // Send on button click
+    sendBtn.addEventListener('click', sendChatMessage);
+
+    // Send on Enter (Shift+Enter for newline)
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendChatMessage();
+        }
+    });
+
+    // Auto-grow textarea
+    input.addEventListener('input', () => {
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 150) + 'px';
+    });
+
+    // New Chat button
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', () => {
+            chatHistory = [];
+            const messagesEl = document.getElementById('chatMessages');
+            if (messagesEl) {
+                messagesEl.innerHTML = `
+                    <div class="chat-welcome" id="chatWelcome">
+                        <div class="chat-welcome-logo">
+                            <img src="/icons/gemini.png" alt="Gemini" width="52" height="52" style="object-fit: contain;">
+                        </div>
+                        <h2>How can I help you today?</h2>
+                        <p>Choose a model above and start chatting with Gemini AI through your OpenGem gateway.</p>
+                        <div class="chat-suggestions">
+                            <button class="chat-suggestion-chip" data-prompt="Explain how OpenGem proxies Gemini API requests.">How does OpenGem work?</button>
+                            <button class="chat-suggestion-chip" data-prompt="Write a short Python script that calls the Gemini API.">Python API example</button>
+                            <button class="chat-suggestion-chip" data-prompt="What are the differences between Gemini 3 Pro and Gemini 2.5 Pro?">Compare Gemini models</button>
+                            <button class="chat-suggestion-chip" data-prompt="Show me how to use streaming with the Gemini API.">Streaming example</button>
+                        </div>
+                    </div>
+                `;
+            }
+            if (input) {
+                input.value = '';
+                input.style.height = 'auto';
+                input.focus();
+            }
+        });
+    }
+
+    // Suggestion chip clicks (delegated from messages area)
+    const messagesArea = document.getElementById('chatMessages');
+    if (messagesArea) {
+        messagesArea.addEventListener('click', (e) => {
+            const chip = e.target.closest('.chat-suggestion-chip');
+            if (!chip) return;
+            const prompt = chip.dataset.prompt;
+            if (prompt && input) {
+                input.value = prompt;
+                input.style.height = 'auto';
+                input.style.height = Math.min(input.scrollHeight, 150) + 'px';
+                input.focus();
+                sendChatMessage();
+            }
+        });
+    }
+
+    chatInitialized = true;
+}
+
+async function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('chatSendBtn');
+    const messagesEl = document.getElementById('chatMessages');
+    const modelSelect = document.getElementById('chatModelSelect');
+    const welcomeEl = document.getElementById('chatWelcome');
+
+    if (!input || !messagesEl) return;
+
+    const message = input.value.trim();
+    if (!message) return;
+
+    const model = modelSelect ? modelSelect.value : 'gemini-3-pro-preview';
+
+    // Hide welcome screen
+    if (welcomeEl) welcomeEl.remove();
+
+    // Add user message to chat history
+    chatHistory.push({
+        role: 'user',
+        parts: [{ text: message }]
+    });
+
+    // Render user bubble
+    const userBubble = document.createElement('div');
+    userBubble.className = 'chat-bubble chat-bubble-user';
+    userBubble.textContent = message;
+    messagesEl.appendChild(userBubble);
+
+    // Clear input
+    input.value = '';
+    input.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    // Add typing indicator
+    const typingEl = document.createElement('div');
+    typingEl.className = 'chat-bubble chat-bubble-assistant';
+    typingEl.style.display = 'flex';
+    typingEl.style.gap = '16px';
+    typingEl.style.alignItems = 'flex-start';
+
+    const typingAvatar = document.createElement('div');
+    typingAvatar.style.width = '28px';
+    typingAvatar.style.height = '28px';
+    typingAvatar.style.borderRadius = '50%';
+    typingAvatar.style.display = 'flex';
+    typingAvatar.style.alignItems = 'center';
+    typingAvatar.style.justifyContent = 'center';
+    typingAvatar.style.flexShrink = '0';
+    typingAvatar.style.marginTop = '2px';
+    typingAvatar.innerHTML = `<img src="/icons/gemini.png" width="28" height="28" style="border-radius:50%; object-fit:cover;">`;
+
+    const typingDots = document.createElement('div');
+    typingDots.style.display = 'flex';
+    typingDots.style.alignItems = 'center';
+    typingDots.style.gap = '4px';
+    typingDots.style.marginTop = '12px';
+    typingDots.innerHTML = '<div class="chat-typing-dot"></div><div class="chat-typing-dot"></div><div class="chat-typing-dot"></div>';
+
+    typingEl.appendChild(typingAvatar);
+    typingEl.appendChild(typingDots);
+    messagesEl.appendChild(typingEl);
+
+    // Scroll to bottom
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    try {
+        const res = await fetch('/api/admin/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: model,
+                contents: chatHistory,
+                generationConfig: {
+                    thinkingConfig: {
+                        includeThoughts: true
+                    }
+                },
+                systemInstruction: {
+                    parts: [{
+                        text: `You are an AI assistant running inside OpenGem — an open-source, self-hosted reverse proxy gateway for the Google Gemini API.
+
+Key facts about OpenGem:
+- OpenGem lets users access the Gemini API for free by rotating multiple Google OAuth accounts.
+- It acts as a drop-in replacement for the official Gemini API endpoint. Developers can point their apps to an OpenGem server instead of Google's API.
+- Built with Node.js, Express, and TypeScript on the backend; vanilla HTML/CSS/JS on the frontend.
+- Supports both Firebase Realtime Database and a local JSON database as storage backends.
+- Features: multi-account rotation with automatic failover, API key management, request logging, admin dashboard, streaming (SSE) support, model fallback (primary model → fallback on 429 errors), and automatic account reactivation after cooldown.
+- Supported models include Gemini 3 Pro Preview, Gemini 3.1 Pro Preview, Gemini 2.5 Flash, and others.
+- The admin dashboard (where this chat lives) provides an overview of usage stats, account management, API key management, request logs, documentation, and this AI chat interface.
+- The project is hosted on GitHub and designed for educational & personal use.
+
+You are helpful, concise, and knowledgeable. When users ask about OpenGem, answer accurately using the facts above. For general questions, respond naturally as a capable AI assistant. Use Markdown formatting for clarity.`
+                    }]
+                }
+            })
+        });
+
+        if (res.status === 401) {
+            showLogin();
+            return;
+        }
+
+        // Render assistant bubble skeleton
+        const assistantBubble = document.createElement('div');
+        assistantBubble.className = 'chat-bubble chat-bubble-assistant';
+        assistantBubble.style.display = 'flex';
+        assistantBubble.style.gap = '16px';
+        assistantBubble.style.alignItems = 'flex-start';
+
+        const avatar = document.createElement('div');
+        avatar.style.width = '28px';
+        avatar.style.height = '28px';
+        avatar.style.borderRadius = '50%';
+        avatar.style.display = 'flex';
+        avatar.style.alignItems = 'center';
+        avatar.style.justifyContent = 'center';
+        avatar.style.flexShrink = '0';
+        avatar.style.marginTop = '2px';
+        avatar.innerHTML = `<img src="/icons/gemini.png" width="28" height="28" style="border-radius:50%; object-fit:cover;">`;
+
+        const content = document.createElement('div');
+        content.style.flex = '1';
+        content.style.minWidth = '0'; // Prevent text overflow
+        content.innerHTML = ''; // Start empty
+
+        assistantBubble.appendChild(avatar);
+        assistantBubble.appendChild(content);
+        messagesEl.appendChild(assistantBubble);
+
+        let thoughtText = '';
+        let thoughtContainer = null;
+        let thoughtContent = null;
+
+        // Read SSE stream
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let fullResponseText = '';
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process lines
+            let newlineIndex;
+            while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
+                const line = buffer.slice(0, newlineIndex).trim();
+                buffer = buffer.slice(newlineIndex + 1);
+
+                if (line.startsWith('data: ')) {
+                    const dataStr = line.slice(6);
+                    if (dataStr === '[DONE]') continue;
+
+                    try {
+                        const parsed = JSON.parse(dataStr);
+                        if (parsed.error) {
+                            throw new Error(parsed.error.message);
+                        }
+                        const candidates = parsed.candidates || parsed.response?.candidates;
+                        if (candidates?.[0]?.content?.parts) {
+                            let chunkText = '';
+                            let chunkThought = '';
+
+                            for (const part of candidates[0].content.parts) {
+                                if (part.thought === true) {
+                                    // Gemini 3 Flash returns thought as a boolean and the content in text
+                                    if (part.text) chunkThought += part.text;
+                                } else if (typeof part.thought === 'string') {
+                                    // Older Gemini 2.0 format
+                                    chunkThought += part.thought;
+                                } else {
+                                    // Normal text output
+                                    if (part.text) chunkText += part.text;
+                                }
+                            }
+
+                            // Handle thoughts
+                            if (chunkThought) {
+                                // If we don't have a container yet, create it
+                                if (!thoughtContainer) {
+                                    if (typingEl && typingEl.parentNode) typingEl.remove();
+
+                                    thoughtContainer = document.createElement('details');
+                                    thoughtContainer.className = 'chat-thought-container';
+
+                                    const summary = document.createElement('summary');
+                                    summary.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg> Thinking...';
+
+                                    thoughtContent = document.createElement('div');
+                                    thoughtContent.className = 'chat-thought-content';
+
+                                    thoughtContainer.appendChild(summary);
+                                    thoughtContainer.appendChild(thoughtContent);
+                                    content.appendChild(thoughtContainer);
+
+                                    // Make details open by default while streaming
+                                    thoughtContainer.open = true;
+                                }
+
+                                thoughtText += chunkThought;
+                                thoughtContent.innerHTML = marked.parse(thoughtText);
+                                // Auto scroll thought box if open
+                                if (thoughtContainer.open) {
+                                    thoughtContent.scrollTop = thoughtContent.scrollHeight;
+                                }
+                                messagesEl.scrollTop = messagesEl.scrollHeight;
+                            }
+
+                            // Handle standard text
+                            if (chunkText) {
+                                if (typingEl && typingEl.parentNode) {
+                                    typingEl.remove();
+                                }
+                                // Auto-collapse thought container once real text starts arriving
+                                if (thoughtContainer && thoughtContainer.open) {
+                                    thoughtContainer.open = false;
+                                }
+
+                                fullResponseText += chunkText;
+
+                                // If we don't have a dedicated text container yet, create it
+                                let textContainer = content.querySelector('.chat-text-container');
+                                if (!textContainer) {
+                                    textContainer = document.createElement('div');
+                                    textContainer.className = 'chat-text-container';
+                                    content.appendChild(textContainer);
+                                }
+
+                                textContainer.innerHTML = marked.parse(fullResponseText); // Use marked to parse markdown
+                                messagesEl.scrollTop = messagesEl.scrollHeight;
+                            }
+                        }
+                    } catch (e) {
+                        // ignore parse error for incomplete chunks
+                    }
+                }
+            }
+        }
+
+        // Update thought summary label once streaming is done
+        if (thoughtContainer) {
+            const summaryEl = thoughtContainer.querySelector('summary');
+            if (summaryEl) {
+                const wordCount = thoughtText.split(/\s+/).filter(Boolean).length;
+                summaryEl.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg> Thinking Process <span style="font-weight:400;opacity:0.65;margin-left:4px;">(~${wordCount} words)</span>`;
+            }
+        }
+
+        // Add assistant response to history
+        chatHistory.push({
+            role: 'model',
+            parts: [{ text: fullResponseText }]
+        });
+
+        // Add action bar
+        const actionBar = document.createElement('div');
+        actionBar.className = 'chat-action-bar';
+
+        const btnCopy = document.createElement('button');
+        btnCopy.className = 'chat-action-btn';
+        btnCopy.title = 'Copy';
+        btnCopy.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+        btnCopy.onclick = () => {
+            navigator.clipboard.writeText(fullResponseText);
+            const originalSvg = btnCopy.innerHTML;
+            btnCopy.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+            setTimeout(() => btnCopy.innerHTML = originalSvg, 2000);
+        };
+
+        const btnReload = document.createElement('button');
+        btnReload.className = 'chat-action-btn';
+        btnReload.title = 'Regenerate';
+        btnReload.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>`;
+        btnReload.onclick = () => {
+            // Remove the last model response from history
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
+                chatHistory.pop();
+            }
+            // Remove the assistant bubble (the parent of this action bar)
+            if (assistantBubble && assistantBubble.parentNode) {
+                assistantBubble.remove();
+            }
+            // Re-send: get the last user message from history
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
+                const lastUserMsg = chatHistory[chatHistory.length - 1].parts[0].text;
+                // Remove user msg from history too since sendChatMessage will re-add it
+                chatHistory.pop();
+                const input = document.getElementById('chatInput');
+                if (input) {
+                    input.value = lastUserMsg;
+                    sendChatMessage();
+                }
+            }
+        };
+
+        // Model ID label
+        const modelLabel = document.createElement('span');
+        modelLabel.className = 'chat-model-label';
+        modelLabel.textContent = model;
+
+        actionBar.appendChild(btnCopy);
+        actionBar.appendChild(btnReload);
+        actionBar.appendChild(modelLabel);
+
+        content.appendChild(actionBar);
+
+    } catch (error) {
+        typingEl.remove();
+        const errorBubble = document.createElement('div');
+        errorBubble.className = 'chat-bubble-error';
+        errorBubble.textContent = `Network error: ${error.message}`;
+        messagesEl.appendChild(errorBubble);
+
+        // Remove the failed user message from history
+        chatHistory.pop();
+    } finally {
+        if (typingEl && typingEl.parentNode) {
+            typingEl.remove();
+        }
+        sendBtn.disabled = false;
+        input.focus();
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }

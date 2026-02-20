@@ -38,7 +38,7 @@ The following are **out of scope**:
 
 | Version | Supported |
 |---------|-----------|
-| 1.x     | ✅        |
+| 0.1.x   | ✅        |
 
 ## Acknowledgments
 

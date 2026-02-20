@@ -38,7 +38,7 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            scriptSrc: ["'self'"],
+            scriptSrc: ["'self'", "https://cdn.jsdelivr.net"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             connectSrc: ["'self'"],
             imgSrc: ["'self'", "data:"],
@@ -471,7 +471,7 @@ app.post('/api/admin/db-switch', requireAdmin, async (req, res) => {
 
 // --- GEMINI PROXY ROUTE ---
 
-import { handleGenerateContent } from './controllers/chat';
+import { handleGenerateContent, handleAdminChat } from './controllers/chat';
 
 const apiLimiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minute
@@ -479,8 +479,13 @@ const apiLimiter = rateLimit({
     message: { error: 'Too many requests. Please try again later.' }
 });
 
+// --- ADMIN CHAT ROUTE ---
+app.post('/api/admin/chat', requireAdmin, (req, res) => {
+    handleAdminChat(req, res);
+});
+
 // --- SPA ROUTING ---
-app.get(['/overview', '/accounts', '/keys', '/logs', '/docs'], (req, res) => {
+app.get(['/overview', '/accounts', '/keys', '/logs', '/docs', '/chat', '/settings'], (req, res) => {
     res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 

@@ -105,6 +105,13 @@
                     </svg>
                     <span>Documentation</span>
                 </a>
+                <a href="#" class="nav-item" data-page="chat">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                    <span>Chat</span>
+                </a>
                 <a href="#" class="nav-item" data-page="settings">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="1.5">
@@ -363,106 +370,90 @@
                     <p class="page-desc">How to integrate with OpenGem</p>
                 </div>
 
-                <!-- Base URL -->
-                <div class="card" style="margin-bottom: 16px;">
-                    <div class="card-header">
-                        <h2>Base URL</h2>
-                    </div>
-                    <div class="card-body" style="padding: 20px;">
-                        <code class="doc-code-inline" id="docBaseUrl">Loading...</code>
-                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">All API requests
-                            should be made to this base URL.</p>
+                <!-- Quick Reference -->
+                <div class="doc-section">
+                    <div class="doc-ref-grid">
+                        <div class="doc-ref-item">
+                            <div class="doc-ref-label">Base URL</div>
+                            <code class="doc-code-inline" id="docBaseUrl">Loading...</code>
+                        </div>
+                        <div class="doc-ref-item">
+                            <div class="doc-ref-label">Authentication</div>
+                            <code class="doc-code-inline">Authorization: Bearer sk-your-api-key</code>
+                            <p class="doc-ref-alt">or use query param <code
+                                    class="doc-code-inline">?key=sk-your-api-key</code></p>
+                        </div>
+                        <div class="doc-ref-item">
+                            <div class="doc-ref-label">Endpoint</div>
+                            <div class="doc-ref-endpoint">
+                                <span class="doc-method">POST</span>
+                                <code class="doc-code-inline">/v1beta/models/{model}:generateContent</code>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Authentication -->
-                <div class="card" style="margin-bottom: 16px;">
-                    <div class="card-header">
-                        <h2>Authentication</h2>
+                <!-- Features: Streaming / System Prompt / Thinking -->
+                <div class="doc-section">
+                    <div class="doc-section-header">
+                        <h2>Features</h2>
+                        <div class="code-tabs">
+                            <button class="code-tab active" data-lang="streaming">Streaming</button>
+                            <button class="code-tab" data-lang="systemprompt">System Prompt</button>
+                            <button class="code-tab" data-lang="thinking">Thinking</button>
+                        </div>
                     </div>
-                    <div class="card-body" style="padding: 20px;">
-                        <p style="font-size: 14px; margin-bottom: 12px;">Include your API key in the <code
-                                class="doc-code-inline">Authorization</code> header:</p>
+
+                    <!-- Streaming -->
+                    <div class="code-panel active" data-lang="streaming">
+                        <p class="doc-panel-desc">
+                            Use <code class="doc-code-inline">streamGenerateContent?alt=sse</code> for Server-Sent
+                            Events streaming.
+                        </p>
                         <div class="doc-code-block">
-                            <div class="doc-code-label">Header</div>
-                            <pre>Authorization: Bearer sk-your-api-key-here</pre>
+                            <div class="doc-code-label">Python — streaming</div>
+                            <pre>for chunk in client.models.generate_content_stream(
+    model="gemini-3.1-pro-preview",
+    contents="Tell me a long story."
+):
+    print(chunk.text, end="", flush=True)</pre>
                         </div>
-                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 12px;">You can create API
-                            keys from the <strong>API Keys</strong> page.</p>
                     </div>
-                </div>
 
-                <!-- Endpoint -->
-                <div class="card" style="margin-bottom: 16px;">
-                    <div class="card-header">
-                        <h2>Chat Completions</h2>
-                    </div>
-                    <div class="card-body" style="padding: 20px;">
-                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
-                            <span class="doc-method">POST</span>
-                            <code class="doc-code-inline">/v1beta/models/{model}:generateContent</code>
+                    <!-- System Prompt -->
+                    <div class="code-panel" data-lang="systemprompt">
+                        <p class="doc-panel-desc">
+                            Set <code class="doc-code-inline">systemInstruction.parts[0].text</code> in the request body
+                            to define a persistent system prompt.
+                        </p>
+                        <div class="doc-code-block">
+                            <div class="doc-code-label">Request body</div>
+                            <pre>{
+  "systemInstruction": { "parts": [{"text": "You are a helpful assistant."}] },
+  "contents": [{"role": "user", "parts": [{"text": "Hello!"}]}]
+}</pre>
                         </div>
+                    </div>
 
-                        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Request Body</h3>
-                        <table class="table" style="margin-bottom: 20px;">
-                            <thead>
-                                <tr>
-                                    <th>Parameter</th>
-                                    <th>Type</th>
-                                    <th>Required</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>contents</code></td>
-                                    <td>array</td>
-                                    <td>Yes</td>
-                                    <td>Array of content objects with <code>role</code> and <code>parts</code></td>
-                                </tr>
-                                <tr>
-                                    <td><code>systemInstruction</code></td>
-                                    <td>object</td>
-                                    <td>No</td>
-                                    <td>Sets the behavior and instructions for the model</td>
-                                </tr>
-                                <tr>
-                                    <td><code>generationConfig</code></td>
-                                    <td>object</td>
-                                    <td>No</td>
-                                    <td>Configuration options like <code>temperature</code> and
-                                        <code>maxOutputTokens</code>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-
-                        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Content Parts</h3>
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Field</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>text</code></td>
-                                    <td>The string text of the prompt</td>
-                                </tr>
-                                <tr>
-                                    <td><code>inlineData</code></td>
-                                    <td>For multimodal inputs (e.g. base64 image data and mimeType)</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <!-- Thinking -->
+                    <div class="code-panel" data-lang="thinking">
+                        <p class="doc-panel-desc">
+                            Supported on <code class="doc-code-inline">gemini-3-pro-preview</code> and above. Response
+                            parts with <code class="doc-code-inline">thought: true</code> are reasoning steps.
+                        </p>
+                        <div class="doc-code-block">
+                            <div class="doc-code-label">Request body</div>
+                            <pre>{
+  "contents": [{"parts": [{"text": "Solve step by step: ..."}]}],
+  "generationConfig": { "thinkingConfig": { "includeThoughts": true } }
+}</pre>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Code Examples -->
-                <div class="card" style="margin-bottom: 16px;">
-                    <div class="card-header"
-                        style="display: flex; align-items: center; justify-content: space-between;">
+                <div class="doc-section">
+                    <div class="doc-section-header">
                         <h2>Code Examples</h2>
                         <div class="code-tabs">
                             <button class="code-tab active" data-lang="curl">cURL</button>
@@ -471,254 +462,250 @@
                             <button class="code-tab" data-lang="langchain">LangChain</button>
                         </div>
                     </div>
-                    <div class="card-body" style="padding: 0;">
 
-                        <!-- cURL -->
-                        <div class="code-panel active" data-lang="curl">
-                            <div class="doc-code-block" style="border-radius: 0;">
-                                <pre>curl -X POST "<span class="doc-base-url">http://localhost:3050</span>/v1beta/models/gemini-3.1-pro-preview:generateContent?key=sk-your-api-key" \
+                    <!-- cURL -->
+                    <div class="code-panel active" data-lang="curl">
+                        <div class="doc-code-block">
+                            <pre>curl -X POST "<span class="doc-base-url">http://localhost:3050</span>/v1beta/models/gemini-3.1-pro-preview:generateContent?key=sk-your-api-key" \
   -H "Content-Type: application/json" \
-  -d '{
-    "contents": [{
-      "parts": [{"text": "Hello!"}]
-    }]
-  }'</pre>
-                            </div>
+  -d '{"contents": [{"parts": [{"text": "Hello!"}]}]}'</pre>
                         </div>
+                    </div>
 
-                        <!-- Python -->
-                        <div class="code-panel" data-lang="python">
-                            <div class="doc-code-block" style="border-radius: 0;">
-                                <div class="doc-code-label">pip install google-genai</div>
-                                <pre>from google import genai
+                    <!-- Python -->
+                    <div class="code-panel" data-lang="python">
+                        <div class="doc-code-block">
+                            <div class="doc-code-label">pip install google-genai</div>
+                            <pre>from google import genai
 
 client = genai.Client(
     api_key="sk-your-api-key",
     http_options={'api_version': 'v1beta', 'url': '<span class="doc-base-url">http://localhost:3050</span>'}
 )
 
-response = client.models.generate_content(
-    model="gemini-3.1-pro-preview",
-    contents="Hello!",
-)
-
+response = client.models.generate_content(model="gemini-3.1-pro-preview", contents="Hello!")
 print(response.text)</pre>
-                            </div>
                         </div>
+                    </div>
 
-                        <!-- JavaScript -->
-                        <div class="code-panel" data-lang="javascript">
-                            <div class="doc-code-block" style="border-radius: 0;">
-                                <div class="doc-code-label">npm install @google/genai</div>
-                                <pre>import { GoogleGenAI } from '@google/genai';
+                    <!-- JavaScript -->
+                    <div class="code-panel" data-lang="javascript">
+                        <div class="doc-code-block">
+                            <div class="doc-code-label">npm install @google/genai</div>
+                            <pre>import { GoogleGenAI } from '@google/genai';
 
-const ai = new GoogleGenAI({
-  apiKey: 'sk-your-api-key',
-  baseUrl: '<span class="doc-base-url">http://localhost:3050</span>',
-});
-
-const response = await ai.models.generateContent({
-  model: 'gemini-3.1-pro-preview',
-  contents: 'Hello!'
-});
-
+const ai = new GoogleGenAI({ apiKey: 'sk-your-api-key', baseUrl: '<span class="doc-base-url">http://localhost:3050</span>' });
+const response = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: 'Hello!' });
 console.log(response.text);</pre>
-                            </div>
                         </div>
+                    </div>
 
-                        <!-- LangChain -->
-                        <div class="code-panel" data-lang="langchain">
-                            <div class="doc-code-block" style="border-radius: 0;">
-                                <div class="doc-code-label">pip install langchain-google-genai</div>
-                                <pre>from langchain_google_genai import ChatGoogleGenerativeAI
+                    <!-- LangChain -->
+                    <div class="code-panel" data-lang="langchain">
+                        <div class="doc-code-block">
+                            <div class="doc-code-label">pip install langchain-google-genai</div>
+                            <pre>from langchain_google_genai import ChatGoogleGenerativeAI
 
 llm = ChatGoogleGenerativeAI(
     google_api_key="sk-your-api-key",
-    client_options={"client_cert_source": None, "api_endpoint": "<span class="doc-base-url">http://localhost:3050</span>"},
+    client_options={"api_endpoint": "<span class="doc-base-url">http://localhost:3050</span>"},
     model="gemini-3.1-pro-preview"
 )
+print(llm.invoke("Hello!").content)</pre>
+                        </div>
+                    </div>
+                </div>
 
-response = llm.invoke("Hello!")
-print(response.content)</pre>
+                <!-- API Playground -->
+                <div class="doc-section">
+                    <h2 class="doc-section-title">API Playground</h2>
+                    <p class="doc-section-subtitle">Test your API integration directly from the dashboard.</p>
+                    <div class="playground-layout">
+                        <div class="playground-input">
+                            <div class="form-group" style="margin-bottom: 16px;">
+                                <label for="pgApiKey">API Key</label>
+                                <input type="password" id="pgApiKey" placeholder="Enter an API Key to test">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 16px;">
+                                <label for="pgModel">Model</label>
+                                <select id="pgModel" class="doc-select">
+                                    <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+                                    <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+                                    <option value="gemini-3-pro-preview" selected>gemini-3-pro-preview</option>
+                                    <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                                    <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 20px;">
+                                <label for="pgMessage">Message</label>
+                                <textarea id="pgMessage" rows="4" placeholder="Enter your prompt here..."
+                                    class="doc-textarea"></textarea>
+                            </div>
+                            <button id="pgSendBtn" class="btn btn-primary btn-full">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" style="margin-right: 6px;">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                </svg>
+                                Send Request
+                            </button>
+                        </div>
+                        <div class="playground-output">
+                            <label class="doc-response-label">Response</label>
+                            <div id="pgResponse" class="doc-code-block doc-response-block">
+                                <div id="pgLoading" class="hidden doc-loading-overlay">
+                                    <div class="loading-spinner" style="width: 24px; height: 24px;"></div>
+                                    <span>Generating...</span>
+                                </div>
+                                <pre id="pgResponseContent" class="doc-response-pre">Awaiting response...</pre>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- API Try It (Playground) -->
-                <div class="card" style="margin-bottom: 16px;">
-                    <div class="card-header">
-                        <h2>API Playground</h2>
-                    </div>
-                    <div class="card-body" style="padding: 20px;">
-                        <div class="playground-layout">
-                            <div class="playground-input">
-                                <div class="form-group" style="margin-bottom: 12px;">
-                                    <label for="pgApiKey">API Key</label>
-                                    <input type="password" id="pgApiKey" placeholder="Enter an API Key to test">
-                                </div>
-                                <div class="form-group" style="margin-bottom: 12px;">
-                                    <label for="pgModel">Model</label>
-                                    <select id="pgModel" class="form-select"
-                                        style="width: 100%; height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font); font-size: 15px; color: var(--text-primary); background: var(--bg); outline: none;">
-                                        <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
-                                        <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
-                                        <option value="gemini-3-pro-preview">gemini-3-pro-preview</option>
-                                        <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                                        <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-                                    </select>
-                                </div>
-                                <div class="form-group" style="margin-bottom: 16px;">
-                                    <label for="pgMessage">Message</label>
-                                    <textarea id="pgMessage" rows="4" placeholder="Enter your prompt here..."
-                                        style="width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font); font-size: 15px; color: var(--text-primary); background: var(--bg); outline: none; resize: vertical;"></textarea>
-                                </div>
-                                <button id="pgSendBtn" class="btn btn-primary btn-full">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2" style="margin-right: 6px;">
-                                        <line x1="22" y1="2" x2="11" y2="13"></line>
-                                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                                    </svg>
-                                    Send Request
-                                </button>
+                <!-- Models & Limits -->
+                <div class="doc-section">
+                    <h2 class="doc-section-title">Available Models</h2>
+                    <p class="doc-section-subtitle">All supported Gemini models and their capabilities.</p>
+
+                    <div class="doc-models-grid">
+                        <div class="doc-model-card doc-model-new">
+                            <div class="doc-model-header">
+                                <code>gemini-3.1-pro-preview</code>
+                                <span class="doc-model-badge doc-badge-new">NEW</span>
                             </div>
-                            <div class="playground-output">
-                                <label
-                                    style="display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">Response</label>
-                                <div id="pgResponse" class="doc-code-block"
-                                    style="height: calc(100% - 24px); min-height: 240px; border-radius: var(--radius-sm); position: relative;">
-                                    <div id="pgLoading" class="hidden"
-                                        style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 12px;">
-                                        <div class="loading-spinner" style="width: 24px; height: 24px;"></div>
-                                        <span
-                                            style="color: var(--text-secondary); font-size: 13px;">Generating...</span>
-                                    </div>
-                                    <pre id="pgResponseContent"
-                                        style="padding: 16px; color: var(--text-tertiary); margin: 0; white-space: pre-wrap; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.6;">Awaiting response...</pre>
-                                </div>
+                            <p class="doc-model-desc">Advanced intelligence, complex problem-solving, agentic coding</p>
+                        </div>
+                        <div class="doc-model-card doc-model-new">
+                            <div class="doc-model-header">
+                                <code>gemini-3-flash-preview</code>
+                                <span class="doc-model-badge doc-badge-new">NEW</span>
                             </div>
+                            <p class="doc-model-desc">Frontier-class performance at a fraction of the cost</p>
+                        </div>
+                        <div class="doc-model-card doc-model-new">
+                            <div class="doc-model-header">
+                                <code>gemini-3-pro-preview</code>
+                                <span class="doc-model-badge doc-badge-new">NEW</span>
+                            </div>
+                            <p class="doc-model-desc">State-of-the-art reasoning with advanced multimodal understanding
+                            </p>
+                        </div>
+                        <div class="doc-model-card">
+                            <div class="doc-model-header">
+                                <code>gemini-2.5-flash</code>
+                                <span class="doc-model-badge">Gemini 2.5</span>
+                            </div>
+                            <p class="doc-model-desc">Best price-performance for low-latency, high-volume reasoning</p>
+                        </div>
+                        <div class="doc-model-card">
+                            <div class="doc-model-header">
+                                <code>gemini-2.5-flash-lite</code>
+                                <span class="doc-model-badge">Gemini 2.5</span>
+                            </div>
+                            <p class="doc-model-desc">Fastest and most budget-friendly multimodal model</p>
+                        </div>
+                        <div class="doc-model-card">
+                            <div class="doc-model-header">
+                                <code>gemini-2.5-pro</code>
+                                <span class="doc-model-badge">Gemini 2.5</span>
+                            </div>
+                            <p class="doc-model-desc">Most advanced for complex tasks, deep reasoning and coding</p>
+                        </div>
+                        <div class="doc-model-card doc-model-deprecated">
+                            <div class="doc-model-header">
+                                <code>gemini-2.0-flash</code>
+                                <span class="doc-model-badge doc-badge-deprecated">Deprecated</span>
+                            </div>
+                            <p class="doc-model-desc">Second generation workhorse, native tool use, 1M context</p>
+                        </div>
+                        <div class="doc-model-card doc-model-deprecated">
+                            <div class="doc-model-header">
+                                <code>gemini-2.0-flash-lite</code>
+                                <span class="doc-model-badge doc-badge-deprecated">Deprecated</span>
+                            </div>
+                            <p class="doc-model-desc">Fastest second generation, optimized for cost efficiency</p>
                         </div>
                     </div>
-                </div>
 
-                <!-- Available Models -->
-                <div class="card" style="margin-bottom: 16px;">
-                    <div class="card-header">
-                        <h2>Available Models</h2>
-                    </div>
-                    <div class="card-body" style="padding: 20px;">
-
-                        <h3
-                            style="font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
-                            Gemini 3 <span class="doc-method"
-                                style="font-size: 10px; padding: 2px 6px; margin-left: 4px;">NEW</span></h3>
-                        <table class="table" style="margin-bottom: 20px;">
-                            <thead>
-                                <tr>
-                                    <th>Model</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>gemini-3.1-pro-preview</code></td>
-                                    <td>Advanced intelligence, complex problem-solving, agentic coding</td>
-                                </tr>
-                                <tr>
-                                    <td><code>gemini-3-flash-preview</code></td>
-                                    <td>Frontier-class performance at a fraction of the cost</td>
-                                </tr>
-                                <tr>
-                                    <td><code>gemini-3-pro-preview</code></td>
-                                    <td>State-of-the-art reasoning with advanced multimodal understanding</td>
-                                </tr>
-                            </tbody>
-                        </table>
-
-                        <h3
-                            style="font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
-                            Gemini 2.5</h3>
-                        <table class="table" style="margin-bottom: 20px;">
-                            <thead>
-                                <tr>
-                                    <th>Model</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>gemini-2.5-flash</code></td>
-                                    <td>Best price-performance for low-latency, high-volume reasoning tasks</td>
-                                </tr>
-                                <tr>
-                                    <td><code>gemini-2.5-flash-lite</code></td>
-                                    <td>Fastest and most budget-friendly multimodal model</td>
-                                </tr>
-                                <tr>
-                                    <td><code>gemini-2.5-pro</code></td>
-                                    <td>Most advanced model for complex tasks, deep reasoning and coding</td>
-                                </tr>
-                            </tbody>
-                        </table>
-
-                        <h3
-                            style="font-size: 13px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
-                            Previous (Deprecated)</h3>
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Model</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>gemini-2.0-flash</code></td>
-                                    <td>Second generation workhorse, native tool use, 1M context window</td>
-                                </tr>
-                                <tr>
-                                    <td><code>gemini-2.0-flash-lite</code></td>
-                                    <td>Fastest second generation, optimized for cost efficiency</td>
-                                </tr>
-                            </tbody>
-                        </table>
-
-                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 12px;">Model availability
-                            depends on your connected Google accounts' access level. Deprecated models will be shut down
-                            soon — migrate to Gemini 2.5+.</p>
-                    </div>
-                </div>
-
-                <!-- Rate Limits -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Rate Limits</h2>
-                    </div>
-                    <div class="card-body" style="padding: 20px;">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Limit</th>
-                                    <th>Value</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>API Requests</td>
-                                    <td>120 requests per minute per IP</td>
-                                </tr>
-                                <tr>
-                                    <td>Login Attempts</td>
-                                    <td>5 per 15 minutes per IP</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 12px;">When a Google
-                            account's quota is exhausted, requests are automatically routed to the next available
-                            account.</p>
+                    <div class="doc-limits-bar">
+                        <div class="doc-limit-item">
+                            <strong>120 req/min</strong> <span>per IP</span>
+                        </div>
+                        <div class="doc-limit-item">
+                            <strong>5 logins</strong> <span>per 15 min per IP</span>
+                        </div>
+                        <div class="doc-limit-item">
+                            <span>Exhausted accounts are automatically skipped.</span>
+                        </div>
                     </div>
                 </div>
             </section>
+            <!-- Chat Page -->
+            <section id="page-chat" class="page">
+                <div class="page-header">
+                    <h1>Chat</h1>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <select id="chatModelSelect" class="chat-model-selector">
+                            <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+                            <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+                            <option value="gemini-3-pro-preview" selected>gemini-3-pro-preview</option>
+                            <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                            <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                        </select>
+                        <button class="btn btn-secondary" id="newChatBtn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19" />
+                                <line x1="5" y1="12" x2="19" y2="12" />
+                            </svg>
+                            New Chat
+                        </button>
+                    </div>
+                </div>
+
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-welcome" id="chatWelcome">
+                            <div class="chat-welcome-logo">
+                                <img src="/icons/gemini.png" alt="Gemini" width="52" height="52"
+                                    style="object-fit: contain;">
+                            </div>
+                            <h2>How can I help you today?</h2>
+                            <p>Choose a model above and start chatting with Gemini AI through your OpenGem gateway.</p>
+                            <div class="chat-suggestions">
+                                <button class="chat-suggestion-chip"
+                                    data-prompt="Explain how OpenGem proxies Gemini API requests.">How does OpenGem
+                                    work?</button>
+                                <button class="chat-suggestion-chip"
+                                    data-prompt="Write a short Python script that calls the Gemini API.">Python API
+                                    example</button>
+                                <button class="chat-suggestion-chip"
+                                    data-prompt="What are the differences between Gemini 3 Pro and Gemini 2.5 Pro?">Compare
+                                    Gemini models</button>
+                                <button class="chat-suggestion-chip"
+                                    data-prompt="Show me how to use streaming with the Gemini API.">Streaming
+                                    example</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chat-input-area chatgpt-input-area">
+                        <div class="chat-input-wrap chatgpt-input-wrap">
+                            <textarea id="chatInput" rows="1" placeholder="Message Gemini..."
+                                autocomplete="off"></textarea>
+                            <button class="chat-send-btn" id="chatSendBtn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                </svg>
+                            </button>
+                        </div>
+                        <p class="chat-disclaimer">Gemini can make mistakes. Check important info.</p>
+                    </div>
+                </div>
+            </section>
+
             <!-- Settings Page -->
             <section id="page-settings" class="page">
                 <div class="page-header">
@@ -830,6 +817,26 @@ print(response.content)</pre>
         </div>
     </div>
 
+    <!-- Log Detail Modal -->
+    <div id="logDetailModal" class="modal-overlay hidden">
+        <div class="modal-box log-detail-modal">
+            <div class="modal-header">
+                <h2>Request Log Detail</h2>
+                <button class="modal-close" id="logDetailClose">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body" id="logDetailBody">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Marked for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="/admin.js"></script>
 </body>
 

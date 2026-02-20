@@ -5,10 +5,11 @@
   <img alt="OpenGem Logo" src="public/logos/black.png" height="120">
 </picture>
 
-# OpenGem
+# OpenGem 0.1.3
 
 **Free, Open-Source AI API Gateway for Gemini Models**
 
+[![Version](https://img.shields.io/badge/Version-0.1.3-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://typescriptlang.org)
@@ -32,12 +33,14 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 | **Completely Free Access** | Leverages Google's free-tier Gemini API using reverse-engineered credentials. |
 | **Smart Load Balancing** | Automatically rotates across multiple Google accounts when a quota limit (429) is hit. |
 | **Standardized API** | Native `v1beta` models endpoint compatibility. Works perfectly with `@google/genai` and `google-genai` SDKs. |
+| **Real-time Streaming** | Full support for true Server-Sent Events (SSE) response streaming with automatic account rotation. |
 | **Dynamic API Keys** | Generate and manage multiple API keys securely from the admin dashboard. |
 | **Usage Dashboard** | Real-time statistics, account performance monitoring, and detailed request log tracking. |
+| **Chat Playground** | Interactive dashboard console to test advanced models natively, adjust system prompts, and visualize thought process streams with Markdown support. |
 | **One-Click Setup** | Intuitive, browser-based setup wizard requiring no manual configuration files. |
 | **Secure by Default** | Built with JWT authentication, rate limiting, and Helmet.js security headers. |
 | **Auto Recovery** | Exhausted Google accounts auto-reactivate seamlessly after a 60-minute cooldown period. |
-| **Flexible Database** | Choose between zero-configuration Firebase Firestore or a completely offline Local JSON database. |
+| **Flexible Database** | Choose between zero-configuration Firebase Firestore or a completely offline Local JSON database, toggleable on the fly in Settings. |
 
 <div align="center">
 <img src="public/screenshots/opengem-overview.jpg" alt="OpenGem Dashboard Overview" width="800">
@@ -102,10 +105,11 @@ Your Application            OpenGem                         Google Gemini API
       │                        │                                   │
       │                        │  Gemini API Response              │
       │                        │◄──────────────────────────────────│
+      │                        │  (Streams SSE if requested)       │
       │                        │                                   │
       │                        │  If 429 → try next account pool   │
-      │                        │  Log usage stats to Firestore     │
-      │  JSON response         │                                   │
+      │                        │  Log usage stats to database      │
+      │  JSON / SSE response   │                                   │
       │◄───────────────────────│                                   │
 ```
 
@@ -121,10 +125,11 @@ This project utilizes the identical OAuth credentials deployed by the official [
 
 ## API Usage Reference
 
-### Endpoint URL
+### Endpoint URLs
 
 ```text
 POST /v1beta/models/{model}:generateContent
+POST /v1beta/models/{model}:streamGenerateContent
 ```
 
 ### Authentication Methods
@@ -177,12 +182,21 @@ const ai = new GoogleGenAI({
   baseUrl: 'http://localhost:3050',
 });
 
+// Standard completion
 const response = await ai.models.generateContent({
   model: 'gemini-3.1-pro-preview',
   contents: 'Hello! What can you do?'
 });
-
 console.log(response.text);
+
+// Streaming completion
+const stream = await ai.models.generateContentStream({
+  model: 'gemini-3.1-pro-preview',
+  contents: 'Tell me a long story.'
+});
+for await (const chunk of stream) {
+  process.stdout.write(chunk.text());
+}
 ```
 
 **LangChain (Python)**
@@ -212,6 +226,8 @@ After completing the initial setup, access the administrative panel at `http://l
 | **Overview** | Analyze total proxy requests, success rates, active account statuses, and system-wide token usage. |
 | **Accounts** | Connect new Google accounts via secure OAuth, monitor their current status, and manually reactivate if necessary. |
 | **API Keys** | Issue new API keys, revoke existing ones, and monitor individual key bandwidth utilization. |
+| **Chat** | Interactive playground supporting Gemini 3 Pro thought processes, customizable system instructions, and real-time Markdown streaming. |
+| **Settings** | Toggle between Firebase and Local JSON database solutions on the fly without losing request logs or account data. |
 | **Logs** | Access comprehensive chronological histories detailing requests, generated completions, and associated token calculations. |
 
 ### Connecting Google Accounts
@@ -265,6 +281,7 @@ After completing the initial setup, access the administrative panel at `http://l
 ```text
 opengem/
 ├── public/
+│   ├── icons/           # Third-party provider icons (Google, Firebase, Gemini)
 │   ├── logos/
 │   │   ├── black.png    # Logo for light backgrounds
 │   │   └── white.png    # Logo for dark backgrounds
@@ -283,9 +300,11 @@ opengem/
 │   │   └── auth.ts      # JWT administrative authentication interceptors
 │   └── services/
 │       ├── config.ts    # Centralized state management & AES-256 encryption
+│       ├── database.ts  # Abstract database interface & backend factory
 │       ├── firebase.ts  # Integrated Firestore schema operations
 │       ├── gemini.ts    # Standardized Gemini API & OAuth connectors
-│       └── http.ts      # Native resilient HTTP client integration
+│       ├── http.ts      # Native resilient HTTP client integration
+│       └── localDb.ts   # Local JSON file database backend
 ├── .env.example         # Template environment variables
 ├── .htaccess            # Production file access restrictions
 ├── app.js               # Production entry point
@@ -293,6 +312,9 @@ opengem/
 ├── nodemon.json         # Development hot-reload configuration
 ├── package.json
 ├── tsconfig.json
+├── CODE_OF_CONDUCT.md   # Community code of conduct
+├── CONTRIBUTING.md      # Contribution guidelines
+├── SECURITY.md          # Security vulnerability reporting
 └── LICENSE
 ```
 
@@ -326,7 +348,7 @@ OAUTH_REDIRECT_URI=https://yourdomain.com/api/auth/callback
 
 ## Open Source Contribution
 
-Community engineering optimization is actively encouraged:
+Community engineering optimization is actively encouraged. Please read the [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before submitting changes.
 
 1. Fork the OpenGem repository.
 2. Formulate a discrete feature branch: `git checkout -b feature/architectural-enhancement`
@@ -334,11 +356,10 @@ Community engineering optimization is actively encouraged:
 4. Push remote branches: `git push origin feature/architectural-enhancement`
 5. Submit a comprehensive Pull Request.
 
+For security vulnerabilities, please refer to our [Security Policy](SECURITY.md).
+
 ### Roadmap & Pipeline
-- Streaming response protocol support (SSE)
-- Expanding multi-model architecture (Gemini-Pro, Gemini-Flash scaling)
 - Docker Compose ecosystem orchestration
-- Integrated Web UI debugging infrastructure
 - Webhook notifications for granular quota alerting
 - Per-API Key differential rate limiting overrides
 - Redis integrated response payload caching
