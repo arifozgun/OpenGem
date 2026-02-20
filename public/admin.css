@@ -785,3 +785,178 @@ body {
         flex-direction: column;
     }
 }
+
+/* ===== MODAL ===== */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: fadeIn 0.15s ease;
+}
+
+.modal-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    width: 100%;
+    max-width: 520px;
+    overflow: hidden;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    padding: 4px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    transition: color var(--transition), background var(--transition);
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+    background: var(--bg);
+}
+
+.modal-body {
+    padding: 20px 24px;
+}
+
+.modal-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: var(--orange-bg);
+    border: 1px solid rgba(255, 149, 0, 0.3);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    font-size: 13px;
+    color: #b86e00;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.modal-warning svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--orange);
+}
+
+.modal-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+}
+
+/* ===== SETTINGS PAGE ===== */
+.db-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.db-status-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+}
+
+.db-status-value {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.badge-db {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.badge-db-local {
+    background: var(--blue-bg);
+    color: var(--accent);
+}
+
+.badge-db-firebase {
+    background: var(--orange-bg);
+    color: var(--orange);
+}
+
+.db-backend-note {
+    margin-top: 14px;
+}
+
+.db-note {
+    font-size: 13px;
+    color: var(--text-secondary);
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    line-height: 1.5;
+}
+
+.db-note code {
+    font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.06);
+    padding: 1px 5px;
+    border-radius: 4px;
+}
+
+.db-note-success {
+    background: var(--green-bg);
+    border-color: rgba(52, 199, 89, 0.3);
+    color: #1b8a36;
+}
+
+/* ===== BUTTON SPINNER ===== */
+.btn-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}

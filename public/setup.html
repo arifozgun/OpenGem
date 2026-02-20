@@ -29,25 +29,93 @@
         <div class="progress-bar">
             <div class="step active" data-step="1">
                 <div class="step-circle">1</div>
-                <span class="step-label">Firebase</span>
+                <span class="step-label">Backend</span>
             </div>
             <div class="step-line"></div>
             <div class="step" data-step="2">
                 <div class="step-circle">2</div>
-                <span class="step-label">Admin</span>
+                <span class="step-label" id="step2Label">Firebase</span>
             </div>
             <div class="step-line"></div>
             <div class="step" data-step="3">
                 <div class="step-circle">3</div>
+                <span class="step-label">Admin</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step" data-step="4">
+                <div class="step-circle">4</div>
                 <span class="step-label">Complete</span>
             </div>
         </div>
 
-        <!-- Step 1: Firebase Config -->
+        <!-- Step 1: Backend Selection -->
         <div class="step-content active" id="step-1">
             <div class="step-card">
                 <div class="step-card-header">
-                    <h2>Firebase Configuration</h2>
+                    <h2>Choose Database Backend</h2>
+                    <p>Select where OpenGem stores your accounts, API keys, and logs. You can switch backends later from
+                        the dashboard.</p>
+                </div>
+                <div class="backend-grid">
+                    <button type="button" class="backend-card selected" id="backendLocal" data-backend="local">
+                        <div class="backend-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.5">
+                                <rect x="2" y="3" width="20" height="14" rx="2" />
+                                <path d="M8 21h8M12 17v4" />
+                            </svg>
+                        </div>
+                        <div class="backend-info">
+                            <strong>Local File</strong>
+                            <span>Stored in <code>data/db.json</code> on the server. No external services needed.</span>
+                        </div>
+                        <div class="backend-check">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5">
+                                <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                        </div>
+                        <span class="backend-badge">Recommended</span>
+                    </button>
+                    <button type="button" class="backend-card" id="backendFirebase" data-backend="firebase">
+                        <div class="backend-icon">
+                            <img src="/icons/firebase.png" alt="Firebase" width="32" height="32"
+                                style="object-fit: contain;">
+                        </div>
+                        <div class="backend-info">
+                            <strong>Firebase Firestore</strong>
+                            <span>Uses Google Firebase for cloud-based storage. Requires a Firebase project.</span>
+                        </div>
+                        <div class="backend-check">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5">
+                                <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                        </div>
+                    </button>
+                </div>
+                <div class="step-actions">
+                    <div></div>
+                    <button type="button" class="btn btn-primary" id="nextToStep2">
+                        Continue
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Firebase Config (shown only for firebase backend) -->
+        <div class="step-content" id="step-2">
+            <div class="step-card" id="step2Firebase">
+                <div class="step-card-header">
+                    <h2 style="display:flex; align-items:center; gap:10px;">
+                        <img src="/icons/firebase.png" alt="Firebase" width="24" height="24"
+                            style="object-fit:contain; flex-shrink:0;">
+                        Firebase Configuration
+                    </h2>
                     <p>Paste your Firebase project config. You can find this in your
                         <a href="https://console.firebase.google.com" target="_blank" rel="noopener">Firebase
                             Console</a>
@@ -95,8 +163,70 @@
                     </button>
                 </div>
                 <div class="step-actions">
-                    <div></div>
-                    <button type="button" class="btn btn-primary" id="nextToStep2">
+                    <button type="button" class="btn btn-ghost" id="backToStep1">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="15 18 9 12 15 6" />
+                        </svg>
+                        Back
+                    </button>
+                    <button type="button" class="btn btn-primary" id="nextToStep3">
+                        Continue
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <!-- Local backend: just a confirmation card -->
+            <div class="step-card hidden" id="step2Local">
+                <div class="step-card-header">
+                    <h2>Local Database Confirmed</h2>
+                    <p>OpenGem will store all data in <code>data/db.json</code> on your server. No external services are
+                        required.</p>
+                </div>
+                <div class="local-confirm-info">
+                    <div class="info-row">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)"
+                            stroke-width="2">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>All tokens are AES-256-GCM encrypted at rest</span>
+                    </div>
+                    <div class="info-row">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)"
+                            stroke-width="2">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>API keys stored as SHA-256 hashes (never plaintext)</span>
+                    </div>
+                    <div class="info-row">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)"
+                            stroke-width="2">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>Logs capped at 5,000 entries automatically</span>
+                    </div>
+                    <div class="info-row">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="8" x2="12" y2="12" />
+                            <line x1="12" y1="16" x2="12.01" y2="16" />
+                        </svg>
+                        <span>Back up <code>data/db.json</code> periodically — it is not synced to the cloud</span>
+                    </div>
+                </div>
+                <div class="step-actions">
+                    <button type="button" class="btn btn-ghost" id="backToStep1Local">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="15 18 9 12 15 6" />
+                        </svg>
+                        Back
+                    </button>
+                    <button type="button" class="btn btn-primary" id="nextToStep3Local">
                         Continue
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
@@ -107,8 +237,8 @@
             </div>
         </div>
 
-        <!-- Step 2: Admin Account -->
-        <div class="step-content" id="step-2">
+        <!-- Step 3: Admin Account -->
+        <div class="step-content" id="step-3">
             <div class="step-card">
                 <div class="step-card-header">
                     <h2>Admin Account</h2>
@@ -122,7 +252,7 @@
                     </div>
                     <div class="form-group full-width">
                         <label for="admin-password">Password <span class="required">*</span></label>
-                        <input type="password" id="admin-password" placeholder="Min 6 characters" required
+                        <input type="password" id="admin-password" placeholder="Min 8 characters" required
                             autocomplete="new-password">
                     </div>
                     <div class="form-group full-width">
@@ -132,7 +262,7 @@
                     </div>
                 </div>
                 <div class="step-actions">
-                    <button type="button" class="btn btn-ghost" id="backToStep1">
+                    <button type="button" class="btn btn-ghost" id="backToStep2">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
                             <polyline points="15 18 9 12 15 6" />
@@ -151,8 +281,8 @@
             </div>
         </div>
 
-        <!-- Step 3: Complete -->
-        <div class="step-content" id="step-3">
+        <!-- Step 4: Complete -->
+        <div class="step-content" id="step-4">
             <div class="step-card step-card-success">
                 <div class="success-icon">
                     <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -163,7 +293,6 @@
                 </div>
                 <h2>Setup Complete.</h2>
                 <p class="success-desc">Your OpenGem server is ready.</p>
-
                 <div class="step-actions center" style="margin-top: 32px;">
                     <a href="/" class="btn btn-primary btn-lg">
                         Open Dashboard

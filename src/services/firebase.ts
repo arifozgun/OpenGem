@@ -17,6 +17,7 @@ import {
     Firestore
 } from 'firebase/firestore';
 import { getConfig, encrypt, decrypt } from './config';
+import type { IDatabase, Account, ApiKey, RequestLog, DbStats } from './database';
 import crypto from 'crypto';
 
 // Polyfill fetch for Firebase if needed (especially for Node.js environments lacking global fetch)
@@ -34,6 +35,9 @@ let db: Firestore | null = null;
 function getDb(): Firestore {
     if (!db) {
         const config = getConfig();
+        if (!config.firebase) {
+            throw new Error('Firebase config is missing. Please run setup with Firebase backend selected.');
+        }
         app = initializeApp(config.firebase);
         db = getFirestore(app);
     }
@@ -49,44 +53,23 @@ function hashApiKey(key: string): string {
     return crypto.createHash('sha256').update(key).digest('hex');
 }
 
-export interface RequestLog {
-    id?: string;
-    accountEmail: string;
-    question: string;
-    answer: string;
-    tokensUsed: number;
-    success: boolean;
-    timestamp: Date | number;
+/**
+ * Firestore rejects `undefined` field values with:
+ *   "Unsupported field value: undefined"
+ * Convert any `undefined` values to `null` before writing.
+ */
+function sanitize(obj: Record<string, any>): Record<string, any> {
+    const out: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+        out[key] = obj[key] === undefined ? null : obj[key];
+    }
+    return out;
 }
 
-export interface Account {
-    id: string; // The email will be used as the document ID for simplicity and uniqueness
-    email: string;
-    accessToken: string;
-    refreshToken: string;
-    projectId: string;
-    expiresAt: Date | number; // Firestore usually prefers numerical timestamps or Date objects
-    isActive: boolean;
-    lastUsedAt: Date | number;
-    exhaustedAt?: Date | number; // Timestamp when account was disabled due to 429
-    createdAt?: Date | number;
-    updatedAt?: Date | number;
-    totalRequests?: number;
-    successfulRequests?: number;
-    failedRequests?: number;
-    totalTokensUsed?: number;
-}
+// Re-export types for any existing code that imported from firebase.ts
+export type { Account, ApiKey, RequestLog, DbStats };
 
-export interface ApiKey {
-    id?: string;
-    name: string;
-    key: string;
-    createdAt: Date | number;
-    lastUsedAt?: Date | number;
-    totalRequests?: number;
-}
-
-export const firebaseDb = {
+export const firebaseDb: IDatabase = {
     async getActiveAccounts(): Promise<Account[]> {
         const accountsRef = collection(getDb(), ACCOUNTS_COLLECTION);
         const q = query(
@@ -145,7 +128,8 @@ export const firebaseDb = {
             dataToSave.createdAt = new Date();
         }
 
-        await setDoc(docRef, dataToSave, { merge: true });
+        // Firestore rejects `undefined` values — replace with null
+        await setDoc(docRef, sanitize(dataToSave), { merge: true });
     },
 
     async updateAccount(email: string, data: Partial<Account>): Promise<void> {
@@ -153,7 +137,7 @@ export const firebaseDb = {
         const encryptedData: any = { ...data, updatedAt: new Date() };
         if (encryptedData.accessToken) encryptedData.accessToken = encrypt(encryptedData.accessToken);
         if (encryptedData.refreshToken) encryptedData.refreshToken = encrypt(encryptedData.refreshToken);
-        await setDoc(docRef, encryptedData, { merge: true });
+        await setDoc(docRef, sanitize(encryptedData), { merge: true });
     },
 
     async incrementAccountStats(email: string, stats: { successful: number, failed: number, tokens: number }): Promise<void> {

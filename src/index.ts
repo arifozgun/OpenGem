@@ -8,9 +8,9 @@ import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import firebaseDb from './services/firebase';
+import { getDatabase, invalidateDbCache } from './services/database';
 import { requireAdmin } from './middleware/auth';
-import { isConfigured, getConfig, saveConfig, generateJwtSecret, generateApiKey, verifyUsername } from './services/config';
+import { isConfigured, getConfig, saveConfig, generateJwtSecret, generateApiKey, verifyUsername, switchDatabaseBackend } from './services/config';
 import {
     OAUTH_CONFIG,
     generatePkce,
@@ -54,6 +54,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.use((req, res, next) => {
     // Always allow setup routes, static assets
     if (
+        req.path === '/setup' ||
         req.path === '/setup.html' ||
         req.path === '/setup.css' ||
         req.path === '/setup.js' ||
@@ -70,13 +71,18 @@ app.use((req, res, next) => {
     }
 
     if (!isConfigured()) {
-        return res.redirect('/setup.html');
+        return res.redirect('/setup');
     }
 
     next();
 });
 
 // --- SETUP ROUTES ---
+
+// Serve setup.html at clean /setup URL
+app.get('/setup', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/setup.html'));
+});
 
 app.get('/api/setup/status', (req, res) => {
     res.json({ configured: isConfigured() });
@@ -88,11 +94,15 @@ app.post('/api/setup', async (req, res) => {
         return res.status(400).json({ error: 'System is already configured. Reset config.json to reconfigure.' });
     }
 
-    const { firebase, admin } = req.body;
+    const { firebase, admin, dbBackend } = req.body;
+    const backend: 'firebase' | 'local' = dbBackend === 'local' ? 'local' : 'firebase';
 
-    if (!firebase || !firebase.apiKey || !firebase.projectId || !firebase.authDomain ||
-        !firebase.storageBucket || !firebase.messagingSenderId || !firebase.appId) {
-        return res.status(400).json({ error: 'Missing required Firebase configuration fields.' });
+    // Validate Firebase config only when firebase backend is chosen
+    if (backend === 'firebase') {
+        if (!firebase || !firebase.apiKey || !firebase.projectId || !firebase.authDomain ||
+            !firebase.storageBucket || !firebase.messagingSenderId || !firebase.appId) {
+            return res.status(400).json({ error: 'Missing required Firebase configuration fields.' });
+        }
     }
 
     if (!admin || !admin.username || !admin.password) {
@@ -108,22 +118,12 @@ app.post('/api/setup', async (req, res) => {
     }
 
     try {
-        // Hash both admin credentials with bcrypt (cost factor 12 for 2026 standards)
         const [hashedUsername, hashedPassword] = await Promise.all([
             bcrypt.hash(admin.username, 12),
             bcrypt.hash(admin.password, 12),
         ]);
 
-        const config = {
-            firebase: {
-                apiKey: firebase.apiKey,
-                authDomain: firebase.authDomain,
-                projectId: firebase.projectId,
-                storageBucket: firebase.storageBucket,
-                messagingSenderId: firebase.messagingSenderId,
-                appId: firebase.appId,
-                measurementId: firebase.measurementId || '',
-            },
+        const config: any = {
             admin: {
                 username: hashedUsername,
                 password: hashedPassword,
@@ -131,7 +131,20 @@ app.post('/api/setup', async (req, res) => {
             jwtSecret: generateJwtSecret(),
             setupCompleted: true,
             setupCompletedAt: new Date().toISOString(),
+            dbBackend: backend,
         };
+
+        if (backend === 'firebase') {
+            config.firebase = {
+                apiKey: firebase.apiKey,
+                authDomain: firebase.authDomain,
+                projectId: firebase.projectId,
+                storageBucket: firebase.storageBucket,
+                messagingSenderId: firebase.messagingSenderId,
+                appId: firebase.appId,
+                measurementId: firebase.measurementId || '',
+            };
+        }
 
         saveConfig(config);
 
@@ -199,7 +212,7 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
 // Simple in-memory store for PKCE verifiers keyed by state parameter
 const authStates = new Map<string, string>();
 
-// API Key middleware — validates against Firebase-stored keys
+// API Key middleware — validates against the active database backend
 const requireApiKey = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const authHeader = req.header('authorization');
     const apiKey = authHeader?.replace('Bearer ', '') || (req.query.key as string) || req.header('x-goog-api-key');
@@ -209,7 +222,7 @@ const requireApiKey = async (req: express.Request, res: express.Response, next: 
     }
 
     try {
-        const isValid = await firebaseDb.validateApiKey(apiKey);
+        const isValid = await getDatabase().validateApiKey(apiKey);
         if (!isValid) {
             return res.status(401).json({ error: 'Unauthorized. Invalid API Key.' });
         }
@@ -267,7 +280,7 @@ app.get('/api/auth/callback', async (req, res) => {
         const projectId = await discoverProjectId(tokens.accessToken);
 
         // Upsert into database
-        await firebaseDb.upsertAccount({
+        await getDatabase().upsertAccount({
             id: email, // use email as ID
             email,
             accessToken: tokens.accessToken,
@@ -289,17 +302,17 @@ app.get('/api/auth/callback', async (req, res) => {
 // --- ACCOUNT MGMT ROUTES ---
 
 app.get('/api/accounts', requireAdmin, async (req, res) => {
-    const accounts = await firebaseDb.getAllAccounts();
+    const accounts = await getDatabase().getAllAccounts();
     res.json(accounts);
 });
 
 app.put('/api/accounts/:id/reactivate', requireAdmin, async (req, res) => {
-    await firebaseDb.reactivateAccount(String(req.params.id));
+    await getDatabase().reactivateAccount(String(req.params.id));
     res.json({ success: true });
 });
 
 app.delete('/api/accounts/:id', requireAdmin, async (req, res) => {
-    await firebaseDb.deleteAccount(String(req.params.id));
+    await getDatabase().deleteAccount(String(req.params.id));
     res.json({ success: true });
 });
 
@@ -307,7 +320,7 @@ app.delete('/api/accounts/:id', requireAdmin, async (req, res) => {
 
 app.get('/api/keys', requireAdmin, async (req, res) => {
     try {
-        const keys = await firebaseDb.getAllApiKeys();
+        const keys = await getDatabase().getAllApiKeys();
         res.json(keys);
     } catch (err: any) {
         console.error('Get keys error:', err);
@@ -322,7 +335,7 @@ app.post('/api/keys', requireAdmin, async (req, res) => {
             return res.status(400).json({ error: 'Key name is required.' });
         }
         const key = generateApiKey();
-        const apiKey = await firebaseDb.createApiKey(name.trim(), key);
+        const apiKey = await getDatabase().createApiKey(name.trim(), key);
         res.json(apiKey);
     } catch (err: any) {
         console.error('Create key error:', err);
@@ -332,7 +345,7 @@ app.post('/api/keys', requireAdmin, async (req, res) => {
 
 app.delete('/api/keys/:id', requireAdmin, async (req, res) => {
     try {
-        await firebaseDb.deleteApiKey(String(req.params.id));
+        await getDatabase().deleteApiKey(String(req.params.id));
         res.json({ success: true });
     } catch (err: any) {
         console.error('Delete key error:', err);
@@ -344,7 +357,7 @@ app.delete('/api/keys/:id', requireAdmin, async (req, res) => {
 
 app.get('/api/stats', requireAdmin, async (req, res) => {
     try {
-        const stats = await firebaseDb.getStats();
+        const stats = await getDatabase().getStats();
         res.json(stats);
     } catch (err: any) {
         console.error('Stats error:', err);
@@ -355,11 +368,104 @@ app.get('/api/stats', requireAdmin, async (req, res) => {
 app.get('/api/logs', requireAdmin, async (req, res) => {
     try {
         const limit = parseInt(req.query.limit as string) || 50;
-        const logs = await firebaseDb.getRecentLogs(limit);
+        const logs = await getDatabase().getRecentLogs(limit);
         res.json(logs);
     } catch (err: any) {
         console.error('Logs error:', err);
         res.status(500).json({ error: 'Failed to fetch logs' });
+    }
+});
+
+// --- DATABASE BACKEND ROUTES ---
+
+app.get('/api/admin/db-status', requireAdmin, (req, res) => {
+    try {
+        const config = getConfig();
+        res.json({ backend: config.dbBackend || 'firebase' });
+    } catch (err: any) {
+        res.status(500).json({ error: 'Failed to get DB status' });
+    }
+});
+
+app.post('/api/admin/db-switch', requireAdmin, async (req, res) => {
+    const { to, firebase } = req.body;
+
+    if (to !== 'firebase' && to !== 'local') {
+        return res.status(400).json({ error: 'Invalid backend. Must be "firebase" or "local".' });
+    }
+
+    const currentConfig = getConfig();
+    const currentBackend = currentConfig.dbBackend || 'firebase';
+
+    if (currentBackend === to) {
+        return res.status(400).json({ error: `Already using ${to} backend.` });
+    }
+
+    // Validate Firebase config when switching to firebase
+    if (to === 'firebase') {
+        if (!firebase || !firebase.apiKey || !firebase.projectId || !firebase.authDomain ||
+            !firebase.storageBucket || !firebase.messagingSenderId || !firebase.appId) {
+            return res.status(400).json({ error: 'Missing required Firebase configuration fields.' });
+        }
+    }
+
+    try {
+        const sourceDb = getDatabase();
+
+        // Update config FIRST so getDatabase() returns the new backend
+        switchDatabaseBackend(to, to === 'firebase' ? firebase : undefined);
+        invalidateDbCache();
+        const targetDb = getDatabase();
+
+        console.log(`🔄 Migrating data from ${currentBackend} → ${to}...`);
+
+        // Migrate accounts (raw data — do not double-encrypt tokens)
+        const accounts = await sourceDb.getAllAccounts();
+        for (const account of accounts) {
+            await targetDb.upsertAccount(account);
+        }
+
+        // Migrate API keys (re-create by name; we lost the original key text so regenerate)
+        // Note: we cannot migrate key hashes cross-backend since we don't store the raw key.
+        // Instead we copy the metadata, flagging that users may need to regenerate keys.
+        // For now we skip key migration and let the user know.
+
+        // Migrate logs
+        const logs = await sourceDb.getRecentLogs(5000);
+        for (const log of [...logs].reverse()) {
+            await targetDb.addRequestLog({
+                accountEmail: log.accountEmail,
+                question: log.question,
+                answer: log.answer,
+                tokensUsed: log.tokensUsed,
+                success: log.success,
+                timestamp: log.timestamp,
+            });
+        }
+
+        console.log(`✅ Migration complete. ${accounts.length} accounts, ${logs.length} logs migrated.`);
+
+        res.json({
+            success: true,
+            backend: to,
+            migrated: { accounts: accounts.length, logs: logs.length },
+            note: 'API keys could not be automatically migrated. Please regenerate them in the Keys tab.',
+        });
+
+        // Restart the process so the new backend is fully initialised from a clean state.
+        // nodemon / pm2 will automatically bring the server back up.
+        console.log(`🔁 Restarting server to apply new database backend (${to})...`);
+        // Exit with non-zero code so nodemon treats it as a crash and auto-restarts.
+        // Exit 0 (clean) tells nodemon to wait for file changes — exit 1 forces restart.
+        setTimeout(() => process.exit(1), 500);
+    } catch (err: any) {
+        console.error('DB switch error:', err);
+        // Try to roll back config change
+        try { switchDatabaseBackend(currentBackend as any); invalidateDbCache(); } catch { }
+        const errMsg = process.env.NODE_ENV === 'production'
+            ? 'Database switch failed. Please try again.'
+            : 'Database switch failed: ' + err.message;
+        res.status(500).json({ error: errMsg });
     }
 });
 
@@ -392,7 +498,7 @@ app.listen(PORT, () => {
     console.log(`🚀 OpenGem running on http://localhost:${PORT}`);
 
     if (!isConfigured()) {
-        console.log(`⚙️  Setup required! Visit http://localhost:${PORT}/setup.html to configure.`);
+        console.log(`⚙️  Setup required! Visit http://localhost:${PORT}/setup to configure.`);
     } else {
         console.log(`✅ System configured and ready.`);
     }
@@ -401,7 +507,7 @@ app.listen(PORT, () => {
     setInterval(async () => {
         if (!isConfigured()) return;
         try {
-            const count = await firebaseDb.reactivateExhaustedAccounts(EXHAUSTION_COOLDOWN_MS);
+            const count = await getDatabase().reactivateExhaustedAccounts(EXHAUSTION_COOLDOWN_MS);
             if (count > 0) {
                 console.log(`♻️ Background job: reactivated ${count} exhausted account(s).`);
             }

@@ -37,7 +37,7 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 | **One-Click Setup** | Intuitive, browser-based setup wizard requiring no manual configuration files. |
 | **Secure by Default** | Built with JWT authentication, rate limiting, and Helmet.js security headers. |
 | **Auto Recovery** | Exhausted Google accounts auto-reactivate seamlessly after a 60-minute cooldown period. |
-| **Firebase Powered** | Zero-configuration database implementation using Firebase Firestore. |
+| **Flexible Database** | Choose between zero-configuration Firebase Firestore or a completely offline Local JSON database. |
 
 <div align="center">
 <img src="public/screenshots/opengem-overview.jpg" alt="OpenGem Dashboard Overview" width="800">
@@ -49,8 +49,8 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 
 ### Prerequisites
 - [Node.js](https://nodejs.org) v18 or higher
-- A [Firebase](https://console.firebase.google.com) project (the free tier is sufficient)
 - At least one active Google account
+- (Optional) A [Firebase](https://console.firebase.google.com) project (if you choose the Firebase backend)
 
 ### Installation
 
@@ -67,7 +67,7 @@ npm run dev
 ```
 
 Navigate to `http://localhost:3050` in your web browser. The **Setup Wizard** will automatically guide you through:
-1. **Firebase Configuration** — Input your Firebase project credentials.
+1. **Database Configuration** — Choose between Local JSON storage or Firebase Firestore.
 2. **Admin Account** — Create your dashboard administrator login.
 3. **API Key Generation** — Your first operational API key will be generated instantly.
 
@@ -75,8 +75,9 @@ Navigate to `http://localhost:3050` in your web browser. The **Setup Wizard** wi
 <img src="public/screenshots/opengem-setup-firebase.jpg" alt="OpenGem Setup Wizard" width="800">
 </div>
 
-### Firebase Setup Guide
+### Firebase Setup Guide (Optional)
 
+*If you choose the Firebase database backend during setup:*
 1. Navigate to the [Firebase Console](https://console.firebase.google.com).
 2. Create a new project or select an existing one.
 3. Go to **Project Settings** > **General** and scroll down to the **Your apps** section.

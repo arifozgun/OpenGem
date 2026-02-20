@@ -109,6 +109,7 @@ function navigateTo(pageName, pushState = true) {
     if (pageName === 'logs') loadLogs();
     if (pageName === 'keys') loadApiKeys();
     if (pageName === 'docs') initDocs();
+    if (pageName === 'settings') loadSettings();
 }
 
 // ===== DOCUMENTATION =====
@@ -123,6 +124,183 @@ function initDocs() {
         el.textContent = window.location.origin;
     });
 }
+
+// ===== SETTINGS =====
+
+let currentDbBackend = null;
+
+async function loadSettings() {
+    const el = document.getElementById('currentDbBackend');
+    const noteEl = document.getElementById('dbBackendNote');
+    if (!el) return;
+
+    try {
+        const res = await fetch('/api/admin/db-status');
+        if (res.status === 401) { showLogin(); return; }
+        const data = await res.json();
+        currentDbBackend = data.backend;
+
+        if (data.backend === 'local') {
+            el.innerHTML = '<span class="badge-db badge-db-local"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> Local File (data/db.json)</span>';
+            if (noteEl) noteEl.innerHTML = '<div class="db-note">Data is stored locally on your server. Back up <code>data/db.json</code> periodically.</div>';
+        } else {
+            el.innerHTML = '<span class="badge-db badge-db-firebase"><img src="/icons/firebase.png" alt="Firebase" width="14" height="14" style="object-fit:contain;vertical-align:middle;margin-right:4px;"> Firebase Firestore</span>';
+            if (noteEl) noteEl.innerHTML = '<div class="db-note">Data is stored in Google Firebase Firestore.</div>';
+        }
+    } catch (e) {
+        el.textContent = 'Error loading status';
+    }
+}
+
+// DB Switch Modal
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('dbSwitchModal');
+    const switchBtn = document.getElementById('switchDbBtn');
+    const closeBtn = document.getElementById('dbModalClose');
+    const cancelBtn = document.getElementById('dbModalCancel');
+    const confirmBtn = document.getElementById('dbModalConfirm');
+    const titleEl = document.getElementById('dbModalTitle');
+    const fbFields = document.getElementById('modalFirebaseFields');
+    const errorEl = document.getElementById('modalSwitchError');
+
+    if (!switchBtn) return; // Settings page not loaded yet
+
+    function openModal() {
+        const target = currentDbBackend === 'local' ? 'firebase' : 'local';
+        if (titleEl) titleEl.textContent = `Switch to ${target === 'firebase' ? 'Firebase Firestore' : 'Local File'}`;
+        if (fbFields) fbFields.classList.toggle('hidden', target !== 'firebase');
+        if (errorEl) errorEl.classList.add('hidden');
+        if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+        if (modal) modal.classList.add('hidden');
+        // Clear Firebase fields
+        ['mfb-apiKey', 'mfb-authDomain', 'mfb-projectId', 'mfb-storageBucket', 'mfb-messagingSenderId', 'mfb-appId'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+    }
+
+    if (switchBtn) switchBtn.addEventListener('click', openModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+    if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+    // Paste Firebase Config JSON button (same logic as setup wizard)
+    const pasteBtn = document.getElementById('modalPasteJsonBtn');
+    if (pasteBtn) pasteBtn.addEventListener('click', async () => {
+        try {
+            let text = '';
+            if (navigator.clipboard && navigator.clipboard.readText) {
+                text = await navigator.clipboard.readText();
+            } else {
+                text = prompt('Paste your Firebase config JSON here:') || '';
+            }
+            if (!text) return;
+
+            let config = null;
+            try {
+                config = JSON.parse(text);
+            } catch {
+                const extract = (key) => {
+                    const regex = new RegExp(`(?:[\"']?${key}[\"']?\\s*:\\s*)([\"'])(.*?)\\1`);
+                    const match = text.match(regex);
+                    return match ? match[2] : null;
+                };
+                const extracted = {
+                    apiKey: extract('apiKey'),
+                    authDomain: extract('authDomain'),
+                    projectId: extract('projectId'),
+                    storageBucket: extract('storageBucket'),
+                    messagingSenderId: extract('messagingSenderId'),
+                    appId: extract('appId'),
+                };
+                if (extracted.apiKey) config = extracted;
+            }
+
+            if (config) {
+                const fieldMap = {
+                    apiKey: 'mfb-apiKey',
+                    authDomain: 'mfb-authDomain',
+                    projectId: 'mfb-projectId',
+                    storageBucket: 'mfb-storageBucket',
+                    messagingSenderId: 'mfb-messagingSenderId',
+                    appId: 'mfb-appId',
+                };
+                Object.entries(fieldMap).forEach(([key, inputId]) => {
+                    if (config[key]) {
+                        const el = document.getElementById(inputId);
+                        if (el) el.value = config[key];
+                    }
+                });
+                if (errorEl) errorEl.classList.add('hidden');
+            } else {
+                if (errorEl) { errorEl.textContent = 'Could not parse Firebase config. Paste a valid JSON object.'; errorEl.classList.remove('hidden'); }
+            }
+        } catch {
+            if (errorEl) { errorEl.textContent = 'Clipboard access denied. Paste the config manually.'; errorEl.classList.remove('hidden'); }
+        }
+    });
+
+    if (confirmBtn) confirmBtn.addEventListener('click', async () => {
+        const target = currentDbBackend === 'local' ? 'firebase' : 'local';
+
+        let body = { to: target };
+        if (target === 'firebase') {
+            const fields = ['mfb-apiKey', 'mfb-authDomain', 'mfb-projectId', 'mfb-storageBucket', 'mfb-messagingSenderId', 'mfb-appId'];
+            const missing = fields.filter(id => !document.getElementById(id)?.value.trim());
+            if (missing.length) {
+                if (errorEl) { errorEl.textContent = 'Please fill in all Firebase fields.'; errorEl.classList.remove('hidden'); }
+                return;
+            }
+            body.firebase = {
+                apiKey: document.getElementById('mfb-apiKey').value.trim(),
+                authDomain: document.getElementById('mfb-authDomain').value.trim(),
+                projectId: document.getElementById('mfb-projectId').value.trim(),
+                storageBucket: document.getElementById('mfb-storageBucket').value.trim(),
+                messagingSenderId: document.getElementById('mfb-messagingSenderId').value.trim(),
+                appId: document.getElementById('mfb-appId').value.trim(),
+            };
+        }
+
+        const originalContent = confirmBtn.innerHTML;
+        confirmBtn.innerHTML = '<span class="btn-spinner"></span> Switching...';
+        confirmBtn.disabled = true;
+        if (errorEl) errorEl.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/admin/db-switch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                if (errorEl) { errorEl.textContent = data.error || 'Switch failed.'; errorEl.classList.remove('hidden'); }
+                confirmBtn.innerHTML = originalContent;
+                confirmBtn.disabled = false;
+                return;
+            }
+
+            closeModal();
+            currentDbBackend = target;
+            // Invalidate all cache
+            isDataCached = { stats: false, accounts: false, logs: false, keys: false };
+            loadSettings();
+
+            // Show success note
+            const note = document.getElementById('dbBackendNote');
+            if (note) note.innerHTML = `<div class="db-note db-note-success">✅ Switched successfully. ${data.migrated?.accounts ?? 0} accounts and ${data.migrated?.logs ?? 0} logs migrated. <strong>Please regenerate your API keys.</strong></div>`;
+
+        } catch (e) {
+            if (errorEl) { errorEl.textContent = 'Network error. Please try again.'; errorEl.classList.remove('hidden'); }
+            confirmBtn.innerHTML = originalContent;
+            confirmBtn.disabled = false;
+        }
+    });
+});
 
 // ===== AUTH =====
 

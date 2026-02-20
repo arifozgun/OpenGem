@@ -105,6 +105,15 @@
                     </svg>
                     <span>Documentation</span>
                 </a>
+                <a href="#" class="nav-item" data-page="settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                    <span>Settings</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <button class="btn btn-ghost btn-full" id="logoutBtn">
@@ -214,12 +223,9 @@
             <section id="page-accounts" class="page">
                 <div class="page-header">
                     <h1>Accounts</h1>
-                    <button id="connectBtn" class="btn btn-primary">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <line x1="12" y1="5" x2="12" y2="19" />
-                            <line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
+                    <button id="connectBtn" class="btn btn-secondary">
+                        <img src="/icons/google.svg" alt="Google" width="18" height="18"
+                            style="object-fit:contain; flex-shrink:0;">
                         Connect Account
                     </button>
                 </div>
@@ -713,7 +719,115 @@ print(response.content)</pre>
                     </div>
                 </div>
             </section>
+            <!-- Settings Page -->
+            <section id="page-settings" class="page">
+                <div class="page-header">
+                    <h1>Settings</h1>
+                    <p class="page-desc">Server configuration and database management</p>
+                </div>
+
+                <!-- Database Backend Card -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2>Database Backend</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <div class="db-status-row">
+                            <div class="db-status-info">
+                                <div class="db-status-label">Current Backend</div>
+                                <div class="db-status-value" id="currentDbBackend">
+                                    <span class="loading-dots">Loading...</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary" id="switchDbBtn">Switch Backend</button>
+                        </div>
+                        <div class="db-backend-note" id="dbBackendNote"></div>
+                    </div>
+                </div>
+            </section>
         </main>
+    </div>
+
+    <!-- Database Switch Modal -->
+    <div id="dbSwitchModal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h2 id="dbModalTitle">Switch Database Backend</h2>
+                <button class="modal-close" id="dbModalClose">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-warning">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path
+                            d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                        <line x1="12" y1="9" x2="12" y2="13" />
+                        <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    <span>All accounts and logs will be migrated automatically. <strong>API keys cannot be
+                            migrated</strong> — you will need to regenerate them after switching.</span>
+                </div>
+
+                <!-- Firebase fields (shown when switching TO firebase) -->
+                <div id="modalFirebaseFields" class="hidden">
+                    <p
+                        style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; display:flex; align-items:center; gap:8px;">
+                        <img src="/icons/firebase.png" alt="Firebase" width="16" height="16"
+                            style="object-fit:contain; flex-shrink:0;">
+                        Enter your Firebase project configuration:
+                    </p>
+                    <div class="modal-form-grid">
+                        <div class="form-group">
+                            <label for="mfb-apiKey">API Key <span style="color:var(--red)">*</span></label>
+                            <input type="text" id="mfb-apiKey" placeholder="AIzaSy...">
+                        </div>
+                        <div class="form-group">
+                            <label for="mfb-authDomain">Auth Domain <span style="color:var(--red)">*</span></label>
+                            <input type="text" id="mfb-authDomain" placeholder="app.firebaseapp.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="mfb-projectId">Project ID <span style="color:var(--red)">*</span></label>
+                            <input type="text" id="mfb-projectId" placeholder="your-project-id">
+                        </div>
+                        <div class="form-group">
+                            <label for="mfb-storageBucket">Storage Bucket <span
+                                    style="color:var(--red)">*</span></label>
+                            <input type="text" id="mfb-storageBucket" placeholder="app.appspot.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="mfb-messagingSenderId">Messaging Sender ID <span
+                                    style="color:var(--red)">*</span></label>
+                            <input type="text" id="mfb-messagingSenderId" placeholder="123456789">
+                        </div>
+                        <div class="form-group">
+                            <label for="mfb-appId">App ID <span style="color:var(--red)">*</span></label>
+                            <input type="text" id="mfb-appId" placeholder="1:123:web:abc">
+                        </div>
+                    </div>
+                    <div
+                        style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); text-align: center;">
+                        <button type="button" class="btn btn-ghost" id="modalPasteJsonBtn" style="font-size: 13px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg>
+                            Paste Firebase Config JSON
+                        </button>
+                    </div>
+                </div>
+
+                <div id="modalSwitchError" class="alert alert-error hidden" style="margin-top: 12px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="dbModalCancel">Cancel</button>
+                <button class="btn btn-primary" id="dbModalConfirm">Confirm Switch</button>
+            </div>
+        </div>
     </div>
 
     <script src="/admin.js"></script>

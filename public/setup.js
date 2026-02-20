@@ -20,11 +20,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     const errorEl = document.getElementById('setupError');
 
     let currentStep = 1;
+    let selectedBackend = 'local'; // default
+
+    // --- Backend Selector ---
+    document.querySelectorAll('.backend-card').forEach(card => {
+        card.addEventListener('click', () => {
+            document.querySelectorAll('.backend-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            selectedBackend = card.dataset.backend;
+        });
+    });
+
+    // Set default 'local' as selected on load
+    document.getElementById('backendLocal').classList.add('selected');
 
     function showStep(step) {
         currentStep = step;
 
-        // Update step indicators
         steps.forEach((s, i) => {
             const stepNum = i + 1;
             s.classList.remove('active', 'completed');
@@ -32,28 +44,46 @@ document.addEventListener('DOMContentLoaded', async () => {
             else if (stepNum < step) s.classList.add('completed');
         });
 
-        // Update connecting lines
         stepLines.forEach((line, i) => {
             line.classList.toggle('active', i < step - 1);
         });
 
-        // Show relevant content
         stepContents.forEach(content => {
             content.classList.remove('active');
         });
         document.getElementById(`step-${step}`).classList.add('active');
 
-        // Hide errors
+        // Update step 2 label
+        document.getElementById('step2Label').textContent = selectedBackend === 'firebase' ? 'Firebase' : 'Local DB';
+
         errorEl.classList.add('hidden');
     }
 
     function showError(msg) {
         errorEl.textContent = msg;
         errorEl.classList.remove('hidden');
+        errorEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    // Step 1 → 2
+    // --- Step 1 → 2 ---
     document.getElementById('nextToStep2').addEventListener('click', () => {
+        // Update step 2 visuals based on selected backend
+        const step2Firebase = document.getElementById('step2Firebase');
+        const step2Local = document.getElementById('step2Local');
+
+        if (selectedBackend === 'firebase') {
+            step2Firebase.classList.remove('hidden');
+            step2Local.classList.add('hidden');
+        } else {
+            step2Firebase.classList.add('hidden');
+            step2Local.classList.remove('hidden');
+        }
+
+        showStep(2);
+    });
+
+    // --- Step 2 Firebase → 3 ---
+    document.getElementById('nextToStep3').addEventListener('click', () => {
         const fields = ['fb-apiKey', 'fb-authDomain', 'fb-projectId', 'fb-storageBucket', 'fb-messagingSenderId', 'fb-appId'];
         const missing = fields.filter(id => !document.getElementById(id).value.trim());
 
@@ -62,20 +92,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById(missing[0]).focus();
             return;
         }
-
-        showStep(2);
+        showStep(3);
     });
 
-    // Step 2 → 1
-    document.getElementById('backToStep1').addEventListener('click', () => {
-        showStep(1);
+    // --- Step 2 Local → 3 ---
+    document.getElementById('nextToStep3Local').addEventListener('click', () => {
+        showStep(3);
     });
+
+    // --- Back buttons ---
+    document.getElementById('backToStep1').addEventListener('click', () => showStep(1));
+    document.getElementById('backToStep1Local').addEventListener('click', () => showStep(1));
+    document.getElementById('backToStep2').addEventListener('click', () => showStep(2));
 
     // Paste Firebase JSON config
     document.getElementById('pasteJsonBtn').addEventListener('click', async () => {
         try {
             let text = '';
-            // Try clipboard first
             if (navigator.clipboard && navigator.clipboard.readText) {
                 text = await navigator.clipboard.readText();
             } else {
@@ -84,16 +117,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (!text) return;
 
-            // Handle both `const firebaseConfig = {...}` and raw JSON/HTML snippets
             let config = null;
             try {
-                // Try raw JSON parse
                 config = JSON.parse(text);
             } catch {
-                // Extract fields using Regex to support any JS/HTML format
                 const extract = (key) => {
-                    // Matches key: "value", "key": "value", or 'key': 'value'
-                    const regex = new RegExp(`(?:["']?${key}["']?\\s*:\\s*)(["'])(.*?)\\1`);
+                    const regex = new RegExp(`(?:[\"']?${key}[\"']?\\s*:\\s*)([\"'])(.*?)\\1`);
                     const match = text.match(regex);
                     return match ? match[2] : null;
                 };
@@ -108,7 +137,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     measurementId: extract('measurementId')
                 };
 
-                // If we found at least an apiKey, consider it a valid config extraction
                 if (extracted.apiKey) {
                     config = extracted;
                 }
@@ -131,7 +159,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 });
 
-                showError('');
                 errorEl.classList.add('hidden');
             } else {
                 showError('Could not parse Firebase config. Please paste a valid JSON object.');
@@ -173,24 +200,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         btn.disabled = true;
 
         try {
+            const body = {
+                dbBackend: selectedBackend,
+                admin: { username, password }
+            };
+
+            if (selectedBackend === 'firebase') {
+                body.firebase = {
+                    apiKey: document.getElementById('fb-apiKey').value.trim(),
+                    authDomain: document.getElementById('fb-authDomain').value.trim(),
+                    projectId: document.getElementById('fb-projectId').value.trim(),
+                    storageBucket: document.getElementById('fb-storageBucket').value.trim(),
+                    messagingSenderId: document.getElementById('fb-messagingSenderId').value.trim(),
+                    appId: document.getElementById('fb-appId').value.trim(),
+                    measurementId: document.getElementById('fb-measurementId').value.trim(),
+                };
+            }
+
             const res = await fetch('/api/setup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    firebase: {
-                        apiKey: document.getElementById('fb-apiKey').value.trim(),
-                        authDomain: document.getElementById('fb-authDomain').value.trim(),
-                        projectId: document.getElementById('fb-projectId').value.trim(),
-                        storageBucket: document.getElementById('fb-storageBucket').value.trim(),
-                        messagingSenderId: document.getElementById('fb-messagingSenderId').value.trim(),
-                        appId: document.getElementById('fb-appId').value.trim(),
-                        measurementId: document.getElementById('fb-measurementId').value.trim(),
-                    },
-                    admin: {
-                        username,
-                        password,
-                    }
-                })
+                body: JSON.stringify(body)
             });
 
             const data = await res.json();
@@ -202,25 +232,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            // Show success
-            showStep(3);
+            showStep(4);
 
         } catch (err) {
             showError('Network error. Please try again.');
             btn.innerHTML = originalContent;
             btn.disabled = false;
         }
-    });
-
-    // Copy API Key
-    document.getElementById('copyKeyBtn').addEventListener('click', () => {
-        const key = document.getElementById('generatedApiKey').textContent;
-        navigator.clipboard.writeText(key).then(() => {
-            const btn = document.getElementById('copyKeyBtn');
-            btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
-            setTimeout(() => {
-                btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-            }, 2000);
-        });
     });
 });

@@ -20,7 +20,7 @@ const AUTH_TAG_LENGTH = 16; // 128-bit auth tag
 // --- Types ---
 
 export interface AppConfig {
-    firebase: {
+    firebase?: {
         apiKey: string;
         authDomain: string;
         projectId: string;
@@ -36,11 +36,13 @@ export interface AppConfig {
     jwtSecret: string;
     setupCompleted: boolean;
     setupCompletedAt?: string;
+    /** Which database backend to use. Defaults to 'firebase' for backward compat. */
+    dbBackend?: 'firebase' | 'local';
 }
 
 // The raw JSON shape on disk (encrypted values are strings)
 interface EncryptedConfig {
-    firebase: {
+    firebase?: {
         apiKey: string;
         authDomain: string;
         projectId: string;
@@ -56,6 +58,7 @@ interface EncryptedConfig {
     jwtSecret: string; // AES-256-GCM encrypted
     setupCompleted: boolean;
     setupCompletedAt?: string;
+    dbBackend?: 'firebase' | 'local';
 }
 
 // --- Encryption Key Management ---
@@ -168,20 +171,25 @@ export function getConfig(): AppConfig {
     // Check if migration is needed (plaintext values on disk)
     let needsMigration = false;
 
-    // Decrypt Firebase fields
-    const firebase: AppConfig['firebase'] = {
-        apiKey: decrypt(encrypted.firebase.apiKey),
-        authDomain: decrypt(encrypted.firebase.authDomain),
-        projectId: decrypt(encrypted.firebase.projectId),
-        storageBucket: decrypt(encrypted.firebase.storageBucket),
-        messagingSenderId: decrypt(encrypted.firebase.messagingSenderId),
-        appId: decrypt(encrypted.firebase.appId),
-        measurementId: encrypted.firebase.measurementId ? decrypt(encrypted.firebase.measurementId) : undefined,
-    };
+    const dbBackend = encrypted.dbBackend || 'firebase';
 
-    // Check if Firebase values were not encrypted (migration needed)
-    if (!isEncrypted(encrypted.firebase.apiKey)) {
-        needsMigration = true;
+    // Decrypt Firebase fields (only if firebase backend is configured)
+    let firebase: AppConfig['firebase'] | undefined;
+    if (encrypted.firebase) {
+        firebase = {
+            apiKey: decrypt(encrypted.firebase.apiKey),
+            authDomain: decrypt(encrypted.firebase.authDomain),
+            projectId: decrypt(encrypted.firebase.projectId),
+            storageBucket: decrypt(encrypted.firebase.storageBucket),
+            messagingSenderId: decrypt(encrypted.firebase.messagingSenderId),
+            appId: decrypt(encrypted.firebase.appId),
+            measurementId: encrypted.firebase.measurementId ? decrypt(encrypted.firebase.measurementId) : undefined,
+        };
+
+        // Check if Firebase values were not encrypted (migration needed)
+        if (!isEncrypted(encrypted.firebase.apiKey)) {
+            needsMigration = true;
+        }
     }
 
     // Decrypt JWT secret
@@ -205,6 +213,7 @@ export function getConfig(): AppConfig {
         jwtSecret,
         setupCompleted: encrypted.setupCompleted,
         setupCompletedAt: encrypted.setupCompletedAt,
+        dbBackend,
     };
 
     // Auto-migrate plaintext config to encrypted format
@@ -222,7 +231,7 @@ export function getConfig(): AppConfig {
 async function migrateConfig(raw: EncryptedConfig): Promise<void> {
     try {
         const encryptedConfig: EncryptedConfig = {
-            firebase: {
+            firebase: raw.firebase ? {
                 apiKey: isEncrypted(raw.firebase.apiKey) ? raw.firebase.apiKey : encrypt(raw.firebase.apiKey),
                 authDomain: isEncrypted(raw.firebase.authDomain) ? raw.firebase.authDomain : encrypt(raw.firebase.authDomain),
                 projectId: isEncrypted(raw.firebase.projectId) ? raw.firebase.projectId : encrypt(raw.firebase.projectId),
@@ -232,7 +241,7 @@ async function migrateConfig(raw: EncryptedConfig): Promise<void> {
                 measurementId: raw.firebase.measurementId
                     ? (isEncrypted(raw.firebase.measurementId) ? raw.firebase.measurementId : encrypt(raw.firebase.measurementId))
                     : undefined,
-            },
+            } : undefined,
             admin: {
                 username: isBcryptHash(raw.admin.username) ? raw.admin.username : await bcrypt.hash(raw.admin.username, 12),
                 password: isBcryptHash(raw.admin.password) ? raw.admin.password : await bcrypt.hash(raw.admin.password, 12),
@@ -240,6 +249,7 @@ async function migrateConfig(raw: EncryptedConfig): Promise<void> {
             jwtSecret: isEncrypted(raw.jwtSecret) ? raw.jwtSecret : encrypt(raw.jwtSecret),
             setupCompleted: raw.setupCompleted,
             setupCompletedAt: raw.setupCompletedAt,
+            dbBackend: raw.dbBackend || 'firebase',
         };
 
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(encryptedConfig, null, 2), 'utf-8');
@@ -255,7 +265,7 @@ async function migrateConfig(raw: EncryptedConfig): Promise<void> {
  */
 export function saveConfig(config: AppConfig): void {
     const encryptedConfig: EncryptedConfig = {
-        firebase: {
+        firebase: config.firebase ? {
             apiKey: encrypt(config.firebase.apiKey),
             authDomain: encrypt(config.firebase.authDomain),
             projectId: encrypt(config.firebase.projectId),
@@ -263,7 +273,7 @@ export function saveConfig(config: AppConfig): void {
             messagingSenderId: encrypt(config.firebase.messagingSenderId),
             appId: encrypt(config.firebase.appId),
             measurementId: config.firebase.measurementId ? encrypt(config.firebase.measurementId) : undefined,
-        },
+        } : undefined,
         admin: {
             username: config.admin.username, // Already bcrypt hashed by caller
             password: config.admin.password, // Already bcrypt hashed by caller
@@ -271,9 +281,40 @@ export function saveConfig(config: AppConfig): void {
         jwtSecret: encrypt(config.jwtSecret),
         setupCompleted: config.setupCompleted,
         setupCompletedAt: config.setupCompletedAt,
+        dbBackend: config.dbBackend || 'firebase',
     };
 
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(encryptedConfig, null, 2), 'utf-8');
+}
+
+/**
+ * Updates only the dbBackend field in config.json without touching any other values.
+ * Also updates the Firebase config if switching to firebase.
+ */
+export function switchDatabaseBackend(
+    to: 'firebase' | 'local',
+    firebaseConfig?: AppConfig['firebase']
+): void {
+    if (!fs.existsSync(CONFIG_PATH)) {
+        throw new Error('Config not found.');
+    }
+    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+    raw.dbBackend = to;
+    if (to === 'firebase' && firebaseConfig) {
+        raw.firebase = {
+            apiKey: encrypt(firebaseConfig.apiKey),
+            authDomain: encrypt(firebaseConfig.authDomain),
+            projectId: encrypt(firebaseConfig.projectId),
+            storageBucket: encrypt(firebaseConfig.storageBucket),
+            messagingSenderId: encrypt(firebaseConfig.messagingSenderId),
+            appId: encrypt(firebaseConfig.appId),
+            measurementId: firebaseConfig.measurementId ? encrypt(firebaseConfig.measurementId) : undefined,
+        };
+    }
+    if (to === 'local') {
+        // Keep firebase credentials in case they switch back, just change backend flag
+    }
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2), 'utf-8');
 }
 
 // --- Utility Functions ---

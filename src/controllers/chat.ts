@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import firebaseDb from '../services/firebase';
+import { getDatabase } from '../services/database';
 import { nativeFetch } from '../services/http';
 import { refreshAccessToken, GEMINI_API_BASE, DEFAULT_MODEL, FALLBACK_MODEL } from '../services/gemini';
 
@@ -41,17 +41,19 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
 const EXHAUSTION_COOLDOWN_MS = 60 * 60 * 1000; // 60 minutes
 
 async function tryGenerateContentWithAccounts(model: string, contents: any[], generationConfig?: any, systemInstruction?: any): Promise<any | null> {
+    const db = getDatabase();
+
     // Auto-reactivate accounts that have been exhausted for longer than the cooldown period
-    const reactivated = await firebaseDb.reactivateExhaustedAccounts(EXHAUSTION_COOLDOWN_MS);
+    const reactivated = await db.reactivateExhaustedAccounts(EXHAUSTION_COOLDOWN_MS);
     if (reactivated > 0) {
         console.log(`♻️ Auto-reactivated ${reactivated} previously exhausted account(s).`);
     }
 
-    const accounts = await firebaseDb.getActiveAccounts();
+    const accounts = await db.getActiveAccounts();
 
     if (accounts.length === 0) {
         console.error('❌ No active Google accounts available to fulfill request.');
-        return null; // Handle this carefully, maybe wait or reject
+        return null;
     }
 
     for (const account of accounts) {
@@ -65,7 +67,7 @@ async function tryGenerateContentWithAccounts(model: string, contents: any[], ge
                 console.log(`🔄 Refreshing token for ${account.email}...`);
                 const newTokens = await refreshAccessToken(account.refreshToken);
 
-                await firebaseDb.updateAccount(account.email, {
+                await db.updateAccount(account.email, {
                     accessToken: newTokens.accessToken,
                     refreshToken: newTokens.refreshToken,
                     expiresAt: newTokens.expiresAt
@@ -100,22 +102,22 @@ async function tryGenerateContentWithAccounts(model: string, contents: any[], ge
             if (response.status === 429) {
                 // Rate limited / Quota Exceeded!
                 console.warn(`⏳ Account ${account.email} hit 429 Quota Limit! Disabling for ${EXHAUSTION_COOLDOWN_MS / 60000} minutes.`);
-                await firebaseDb.updateAccount(account.email, {
+                await db.updateAccount(account.email, {
                     isActive: false,
                     lastUsedAt: new Date(),
                     exhaustedAt: new Date()
                 });
-                await firebaseDb.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
+                await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
 
                 // Log error
-                firebaseDb.addRequestLog({
+                db.addRequestLog({
                     accountEmail: account.email,
                     question: contents?.[contents.length - 1]?.parts?.[0]?.text?.substring(0, 500) || 'Unknown Request',
                     answer: 'ERROR 429: Account exhausted / Quota Limit Reached',
                     tokensUsed: 0,
                     success: false,
                     timestamp: new Date()
-                }).catch(err => console.error('Log write error:', err));
+                }).catch((err: any) => console.error('Log write error:', err));
 
                 // Switch to next account by continuing the loop
                 continue;
@@ -124,17 +126,17 @@ async function tryGenerateContentWithAccounts(model: string, contents: any[], ge
             if (!response.ok) {
                 const text = await response.text();
                 console.error(`❌ API error ${response.status} for ${account.email}: ${text}`);
-                await firebaseDb.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
+                await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
 
                 // Log error
-                firebaseDb.addRequestLog({
+                db.addRequestLog({
                     accountEmail: account.email,
                     question: contents?.[contents.length - 1]?.parts?.[0]?.text?.substring(0, 500) || 'Unknown Request',
                     answer: `ERROR ${response.status}: ${text.substring(0, 100)}`,
                     tokensUsed: 0,
                     success: false,
                     timestamp: new Date()
-                }).catch(err => console.error('Log write error:', err));
+                }).catch((err: any) => console.error('Log write error:', err));
 
                 // Could be other errors (400, 403, etc). Don't disable account yet, just continue or throw
                 continue;
@@ -147,19 +149,19 @@ async function tryGenerateContentWithAccounts(model: string, contents: any[], ge
 
             if (content) {
                 // Success! Record stats
-                await firebaseDb.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: tokenUsage });
+                await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: tokenUsage });
 
                 // Log request for dashboard
                 const lastUserMessage = contents[contents.length - 1];
                 const questionText = lastUserMessage?.parts?.[0]?.text || '';
-                firebaseDb.addRequestLog({
+                db.addRequestLog({
                     accountEmail: account.email,
                     question: questionText.substring(0, 500),
                     answer: content.substring(0, 500),
                     tokensUsed: tokenUsage,
                     success: true,
                     timestamp: new Date()
-                }).catch(err => console.error('Log write error:', err));
+                }).catch((err: any) => console.error('Log write error:', err));
 
                 console.log(`✅ Request fulfilled by account ${account.email}`);
 
@@ -169,17 +171,17 @@ async function tryGenerateContentWithAccounts(model: string, contents: any[], ge
 
         } catch (e: any) {
             console.error(`❌ Network/Processing error with account ${account.email}:`, e);
-            await firebaseDb.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
+            await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
 
             // Log error
-            firebaseDb.addRequestLog({
+            db.addRequestLog({
                 accountEmail: account.email,
                 question: contents?.[contents.length - 1]?.parts?.[0]?.text?.substring(0, 500) || 'Unknown Request',
                 answer: `ERROR: ${e.message?.substring(0, 100) || 'Network/Processing Error'}`,
                 tokensUsed: 0,
                 success: false,
                 timestamp: new Date()
-            }).catch(err => console.error('Log write error:', err));
+            }).catch((err: any) => console.error('Log write error:', err));
 
             // Move to next account
             continue;
