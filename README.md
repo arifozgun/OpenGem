@@ -7,7 +7,7 @@
 
 # OpenGem
 
-**Free, Unlimited AI API Gateway via Gemini API Reverse Engineering**
+**Free, Open-Source AI API Gateway for Gemini Models**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
@@ -32,7 +32,7 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 | **Completely Free Access** | Leverages Google's free-tier Gemini API using reverse-engineered credentials. |
 | **Smart Load Balancing** | Automatically rotates across multiple Google accounts when a quota limit (429) is hit. |
 | **Standardized API** | Native `v1beta` models endpoint compatibility. Works perfectly with `@google/genai` and `google-genai` SDKs. |
-| **Dynamic API Keys** | Generate and manage unlimited API keys securely from the admin dashboard. |
+| **Dynamic API Keys** | Generate and manage multiple API keys securely from the admin dashboard. |
 | **Usage Dashboard** | Real-time statistics, account performance monitoring, and detailed request log tracking. |
 | **One-Click Setup** | Intuitive, browser-based setup wizard requiring no manual configuration files. |
 | **Secure by Default** | Built with JWT authentication, rate limiting, and Helmet.js security headers. |
@@ -352,7 +352,20 @@ This repository is distributed under the [MIT License](LICENSE).
 
 ## Disclaimer
 
-OpenGem conceptually functions upon reverse-engineered synchronization exploiting authenticated credentials derived from Google's Gemini CLI infrastructure. The solution is architected fundamentally for educational, personal research, and development. Maintainers suggest pragmatic, responsible utilization. This toolchain maintains no official affiliation, validation, or endorsement from Google LLC or its subsidiaries.
+> [!CAUTION]
+> **This project is intended strictly for educational purposes, personal research, and learning.**
+
+OpenGem is a proof-of-concept project that demonstrates API gateway architecture, multi-account load balancing, and OAuth authentication patterns. It utilizes credentials derived from Google's open-source [Gemini CLI](https://github.com/google-gemini/gemini-cli) project.
+
+**By using this software, you acknowledge that:**
+
+- This project is provided **as-is** for educational and research purposes only.
+- You are solely responsible for ensuring your usage complies with [Google's Terms of Service](https://policies.google.com/terms).
+- This project is **not intended for commercial or production use**.
+- The authors and contributors assume **no liability** for any consequences arising from the use of this software.
+- This project has **no official affiliation, endorsement, or sponsorship** from Google LLC or any of its subsidiaries.
+
+**If you are looking for production-ready Gemini API access, please use the official [Google AI Studio](https://aistudio.google.com) or [Google Cloud Vertex AI](https://cloud.google.com/vertex-ai).**
 
 ---
 
