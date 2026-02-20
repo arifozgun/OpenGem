@@ -8,7 +8,7 @@ import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import firebaseDb from './services/firebase';
+import { db } from './services/db';
 import { requireAdmin } from './middleware/auth';
 import { isConfigured, getConfig, saveConfig, generateJwtSecret, generateApiKey, verifyUsername } from './services/config';
 import {
@@ -89,10 +89,13 @@ app.post('/api/setup', async (req, res) => {
     }
 
     const { firebase, admin } = req.body;
+    const isSqliteMode = process.env.DB_PROVIDER === 'sqlite';
 
-    if (!firebase || !firebase.apiKey || !firebase.projectId || !firebase.authDomain ||
-        !firebase.storageBucket || !firebase.messagingSenderId || !firebase.appId) {
-        return res.status(400).json({ error: 'Missing required Firebase configuration fields.' });
+    if (!isSqliteMode) {
+        if (!firebase || !firebase.apiKey || !firebase.projectId || !firebase.authDomain ||
+            !firebase.storageBucket || !firebase.messagingSenderId || !firebase.appId) {
+            return res.status(400).json({ error: 'Missing required Firebase configuration fields.' });
+        }
     }
 
     if (!admin || !admin.username || !admin.password) {
@@ -115,7 +118,10 @@ app.post('/api/setup', async (req, res) => {
         ]);
 
         const config = {
-            firebase: {
+            firebase: isSqliteMode ? {
+                apiKey: '', authDomain: '', projectId: '',
+                storageBucket: '', messagingSenderId: '', appId: '',
+            } : {
                 apiKey: firebase.apiKey,
                 authDomain: firebase.authDomain,
                 projectId: firebase.projectId,
@@ -209,7 +215,7 @@ const requireApiKey = async (req: express.Request, res: express.Response, next: 
     }
 
     try {
-        const isValid = await firebaseDb.validateApiKey(apiKey);
+        const isValid = await db.validateApiKey(apiKey);
         if (!isValid) {
             return res.status(401).json({ error: 'Unauthorized. Invalid API Key.' });
         }
@@ -267,7 +273,7 @@ app.get('/api/auth/callback', async (req, res) => {
         const projectId = await discoverProjectId(tokens.accessToken);
 
         // Upsert into database
-        await firebaseDb.upsertAccount({
+        await db.upsertAccount({
             id: email, // use email as ID
             email,
             accessToken: tokens.accessToken,
@@ -289,17 +295,17 @@ app.get('/api/auth/callback', async (req, res) => {
 // --- ACCOUNT MGMT ROUTES ---
 
 app.get('/api/accounts', requireAdmin, async (req, res) => {
-    const accounts = await firebaseDb.getAllAccounts();
+    const accounts = await db.getAllAccounts();
     res.json(accounts);
 });
 
 app.put('/api/accounts/:id/reactivate', requireAdmin, async (req, res) => {
-    await firebaseDb.reactivateAccount(String(req.params.id));
+    await db.reactivateAccount(String(req.params.id));
     res.json({ success: true });
 });
 
 app.delete('/api/accounts/:id', requireAdmin, async (req, res) => {
-    await firebaseDb.deleteAccount(String(req.params.id));
+    await db.deleteAccount(String(req.params.id));
     res.json({ success: true });
 });
 
@@ -307,7 +313,7 @@ app.delete('/api/accounts/:id', requireAdmin, async (req, res) => {
 
 app.get('/api/keys', requireAdmin, async (req, res) => {
     try {
-        const keys = await firebaseDb.getAllApiKeys();
+        const keys = await db.getAllApiKeys();
         res.json(keys);
     } catch (err: any) {
         console.error('Get keys error:', err);
@@ -322,7 +328,7 @@ app.post('/api/keys', requireAdmin, async (req, res) => {
             return res.status(400).json({ error: 'Key name is required.' });
         }
         const key = generateApiKey();
-        const apiKey = await firebaseDb.createApiKey(name.trim(), key);
+        const apiKey = await db.createApiKey(name.trim(), key);
         res.json(apiKey);
     } catch (err: any) {
         console.error('Create key error:', err);
@@ -332,7 +338,7 @@ app.post('/api/keys', requireAdmin, async (req, res) => {
 
 app.delete('/api/keys/:id', requireAdmin, async (req, res) => {
     try {
-        await firebaseDb.deleteApiKey(String(req.params.id));
+        await db.deleteApiKey(String(req.params.id));
         res.json({ success: true });
     } catch (err: any) {
         console.error('Delete key error:', err);
@@ -344,7 +350,7 @@ app.delete('/api/keys/:id', requireAdmin, async (req, res) => {
 
 app.get('/api/stats', requireAdmin, async (req, res) => {
     try {
-        const stats = await firebaseDb.getStats();
+        const stats = await db.getStats();
         res.json(stats);
     } catch (err: any) {
         console.error('Stats error:', err);
@@ -355,7 +361,7 @@ app.get('/api/stats', requireAdmin, async (req, res) => {
 app.get('/api/logs', requireAdmin, async (req, res) => {
     try {
         const limit = parseInt(req.query.limit as string) || 50;
-        const logs = await firebaseDb.getRecentLogs(limit);
+        const logs = await db.getRecentLogs(limit);
         res.json(logs);
     } catch (err: any) {
         console.error('Logs error:', err);
@@ -401,7 +407,7 @@ app.listen(PORT, () => {
     setInterval(async () => {
         if (!isConfigured()) return;
         try {
-            const count = await firebaseDb.reactivateExhaustedAccounts(EXHAUSTION_COOLDOWN_MS);
+            const count = await db.reactivateExhaustedAccounts(EXHAUSTION_COOLDOWN_MS);
             if (count > 0) {
                 console.log(`♻️ Background job: reactivated ${count} exhausted account(s).`);
             }
