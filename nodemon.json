@@ -1,0 +1,6 @@
+{
+    "ignore": [
+        "config.json",
+        "*.log"
+    ]
+}

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGem — Setup</title>
+    <meta name="description" content="Configure your free OpenGem server in minutes.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/setup.css">
+    <link rel="icon" href="/logos/black.png" media="(prefers-color-scheme: light)">
+    <link rel="icon" href="/logos/white.png" media="(prefers-color-scheme: dark)">
+</head>
+
+<body>
+    <div class="setup-container">
+        <!-- Header -->
+        <div class="setup-header">
+            <div class="logo-icon">
+                <img src="/logos/black.png" alt="OpenGem Logo" width="64" height="64" style="object-fit: contain;">
+            </div>
+            <h1>OpenGem</h1>
+            <p class="subtitle">Free, unlimited AI API endpoints via reverse engineering</p>
+        </div>
+
+        <!-- Progress Steps -->
+        <div class="progress-bar">
+            <div class="step active" data-step="1">
+                <div class="step-circle">1</div>
+                <span class="step-label">Firebase</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step" data-step="2">
+                <div class="step-circle">2</div>
+                <span class="step-label">Admin</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step" data-step="3">
+                <div class="step-circle">3</div>
+                <span class="step-label">Complete</span>
+            </div>
+        </div>
+
+        <!-- Step 1: Firebase Config -->
+        <div class="step-content active" id="step-1">
+            <div class="step-card">
+                <div class="step-card-header">
+                    <h2>Firebase Configuration</h2>
+                    <p>Paste your Firebase project config. You can find this in your
+                        <a href="https://console.firebase.google.com" target="_blank" rel="noopener">Firebase
+                            Console</a>
+                        → Project Settings → General → Your apps → Config.
+                    </p>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="fb-apiKey">API Key <span class="required">*</span></label>
+                        <input type="text" id="fb-apiKey" placeholder="AIzaSy..." required>
+                    </div>
+                    <div class="form-group">
+                        <label for="fb-authDomain">Auth Domain <span class="required">*</span></label>
+                        <input type="text" id="fb-authDomain" placeholder="your-app.firebaseapp.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="fb-projectId">Project ID <span class="required">*</span></label>
+                        <input type="text" id="fb-projectId" placeholder="your-project-id" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="fb-storageBucket">Storage Bucket <span class="required">*</span></label>
+                        <input type="text" id="fb-storageBucket" placeholder="your-app.appspot.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="fb-messagingSenderId">Messaging Sender ID <span class="required">*</span></label>
+                        <input type="text" id="fb-messagingSenderId" placeholder="123456789" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="fb-appId">App ID <span class="required">*</span></label>
+                        <input type="text" id="fb-appId" placeholder="1:123456:web:abc123" required>
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="fb-measurementId">Measurement ID <span class="optional">(optional)</span></label>
+                        <input type="text" id="fb-measurementId" placeholder="G-XXXXXXXXXX">
+                    </div>
+                </div>
+                <div class="paste-config-area">
+                    <button type="button" class="btn btn-ghost" id="pasteJsonBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                        Paste Firebase Config JSON
+                    </button>
+                </div>
+                <div class="step-actions">
+                    <div></div>
+                    <button type="button" class="btn btn-primary" id="nextToStep2">
+                        Continue
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Admin Account -->
+        <div class="step-content" id="step-2">
+            <div class="step-card">
+                <div class="step-card-header">
+                    <h2>Admin Account</h2>
+                    <p>Create your admin credentials to access the dashboard. You'll use these to manage Google
+                        accounts, API keys, and monitor usage.</p>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label for="admin-username">Username <span class="required">*</span></label>
+                        <input type="text" id="admin-username" placeholder="admin" required autocomplete="username">
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="admin-password">Password <span class="required">*</span></label>
+                        <input type="password" id="admin-password" placeholder="Min 6 characters" required
+                            autocomplete="new-password">
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="admin-password-confirm">Confirm Password <span class="required">*</span></label>
+                        <input type="password" id="admin-password-confirm" placeholder="Repeat password" required
+                            autocomplete="new-password">
+                    </div>
+                </div>
+                <div class="step-actions">
+                    <button type="button" class="btn btn-ghost" id="backToStep1">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="15 18 9 12 15 6" />
+                        </svg>
+                        Back
+                    </button>
+                    <button type="button" class="btn btn-primary" id="completeSetup">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                            <polyline points="22 4 12 14.01 9 11.01" />
+                        </svg>
+                        Complete Setup
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Complete -->
+        <div class="step-content" id="step-3">
+            <div class="step-card step-card-success">
+                <div class="success-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                </div>
+                <h2>Setup Complete.</h2>
+                <p class="success-desc">Your OpenGem server is ready.</p>
+
+                <div class="step-actions center" style="margin-top: 32px;">
+                    <a href="/" class="btn btn-primary btn-lg">
+                        Open Dashboard
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error alert -->
+        <div id="setupError" class="alert alert-error hidden"></div>
+    </div>
+
+    <script src="/setup.js"></script>
+</body>
+
+</html>

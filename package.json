@@ -1,0 +1,55 @@
+{
+  "name": "opengem",
+  "version": "1.0.0",
+  "description": "Free, unlimited AI API gateway powered by reverse-engineered Gemini CLI credentials",
+  "main": "app.js",
+  "scripts": {
+    "dev": "nodemon src/index.ts",
+    "build": "tsc",
+    "start": "node app.js"
+  },
+  "keywords": [
+    "gemini",
+    "api-gateway",
+    "ai",
+    "google",
+    "proxy",
+    "free-api",
+    "load-balancer",
+    "reverse-proxy"
+  ],
+  "author": "Arif Özgün",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arifozgun/OpenGem.git"
+  },
+  "homepage": "https://github.com/arifozgun/OpenGem#readme",
+  "bugs": {
+    "url": "https://github.com/arifozgun/OpenGem/issues"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "firebase": "^12.9.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.3.0",
+    "nodemon": "^3.1.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

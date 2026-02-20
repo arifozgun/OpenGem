@@ -1,0 +1,19 @@
+# Disable directory listing
+Options -Indexes
+
+# Deny access to sensitive files
+<FilesMatch "\.(env|db|ts|bak|json|lock)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Deny access to sensitive directories
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Block access to sensitive directories
+    RewriteRule ^(src|prisma|generated|dist|node_modules|tmp|cgi-bin)(/.*)?$ - [F,L]
+
+    # Proxy all requests to Node.js app (LiteSpeed)
+    RewriteRule ^(.*)$ http://localhost:3050/$1 [P,L]
+</IfModule>

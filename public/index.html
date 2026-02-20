@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGem — Admin Dashboard</title>
+    <meta name="description" content="Manage and monitor OpenGem accounts and usage statistics.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/admin.css">
+    <link rel="icon" href="/logos/black.png" media="(prefers-color-scheme: light)">
+    <link rel="icon" href="/logos/white.png" media="(prefers-color-scheme: dark)">
+</head>
+
+<body>
+    <!-- Loading State -->
+    <div id="loading-view" class="loading-screen">
+        <div class="loading-spinner"></div>
+        <p class="loading-text">Verifying session...</p>
+    </div>
+
+    <!-- Login View -->
+    <div id="login-view" class="login-screen hidden">
+        <div class="login-card">
+            <div class="login-icon">
+                <img src="/logos/black.png" alt="OpenGem Logo" width="48" height="48" style="object-fit: contain;">
+            </div>
+            <h1 class="login-title">OpenGem</h1>
+            <p class="login-subtitle">Sign in to your admin dashboard</p>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="adminUsername">Username</label>
+                    <input type="text" id="adminUsername" placeholder="Enter username" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="adminPassword">Password</label>
+                    <input type="password" id="adminPassword" placeholder="Enter password" required
+                        autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary btn-full" id="loginBtn">Sign In</button>
+                <div id="loginError" class="alert alert-error hidden">Invalid credentials or rate limit exceeded.</div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard View -->
+    <div id="dashboard-view" class="dashboard hidden">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <img src="/logos/black.png" alt="OpenGem Logo" width="28" height="28" style="object-fit: contain;">
+                </div>
+                <span class="sidebar-brand">OpenGem</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="overview">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <rect x="3" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="3" width="7" height="7" rx="1" />
+                        <rect x="3" y="14" width="7" height="7" rx="1" />
+                        <rect x="14" y="14" width="7" height="7" rx="1" />
+                    </svg>
+                    <span>Overview</span>
+                </a>
+                <a href="#" class="nav-item" data-page="accounts">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                    <span>Accounts</span>
+                </a>
+                <a href="#" class="nav-item" data-page="keys">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <path
+                            d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+                    </svg>
+                    <span>API Keys</span>
+                </a>
+                <a href="#" class="nav-item" data-page="logs">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                    </svg>
+                    <span>Request Logs</span>
+                </a>
+                <a href="#" class="nav-item" data-page="docs">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                        <line x1="9" y1="7" x2="16" y2="7" />
+                        <line x1="9" y1="11" x2="16" y2="11" />
+                        <line x1="9" y1="15" x2="13" y2="15" />
+                    </svg>
+                    <span>Documentation</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="btn btn-ghost btn-full" id="logoutBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    <span>Sign Out</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Overview Page -->
+            <section id="page-overview" class="page active">
+                <div class="page-header">
+                    <h1>Overview</h1>
+                    <p class="page-desc">API usage summary and account performance</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-blue">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Total Requests</span>
+                            <span class="stat-value" id="stat-total">—</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-green">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                <polyline points="22 4 12 14.01 9 11.01" />
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Success Rate</span>
+                            <span class="stat-value" id="stat-success">—</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-purple">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                <circle cx="9" cy="7" r="4" />
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Active Accounts</span>
+                            <span class="stat-value" id="stat-accounts">—</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-orange">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <polyline points="12 6 12 12 16 14" />
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Tokens Used</span>
+                            <span class="stat-value" id="stat-tokens">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Account Performance</h2>
+                    </div>
+                    <div class="card-body">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Account</th>
+                                    <th>Requests</th>
+                                    <th>Success</th>
+                                    <th>Failed</th>
+                                    <th>Tokens</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="accountStatsBody">
+                                <tr>
+                                    <td colspan="6" class="table-empty">Loading statistics...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Accounts Page -->
+            <section id="page-accounts" class="page">
+                <div class="page-header">
+                    <h1>Accounts</h1>
+                    <button id="connectBtn" class="btn btn-primary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                        Connect Account
+                    </button>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Project ID</th>
+                                    <th>Status</th>
+                                    <th>Last Used</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="accountsBody">
+                                <tr>
+                                    <td colspan="5" class="table-empty">Loading accounts...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- API Keys Page -->
+            <section id="page-keys" class="page">
+                <div class="page-header">
+                    <h1>API Keys</h1>
+                    <button id="createKeyBtn" class="btn btn-primary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                        Create Key
+                    </button>
+                </div>
+
+                <!-- Create Key Form (hidden by default) -->
+                <div id="createKeyForm" class="card hidden" style="margin-bottom: 16px;">
+                    <div class="card-body" style="padding: 20px;">
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label for="newKeyName">Key Name</label>
+                            <input type="text" id="newKeyName" placeholder="e.g. Production, My App">
+                        </div>
+                        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                            <button class="btn btn-ghost" id="cancelCreateKey">Cancel</button>
+                            <button class="btn btn-primary" id="confirmCreateKey">Generate Key</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- New Key Display (shown after creation) -->
+                <div id="newKeyDisplay" class="card hidden" style="margin-bottom: 16px;">
+                    <div class="card-body" style="padding: 20px;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+                            <span class="badge badge-active">Created</span>
+                            <span style="font-size: 13px; color: var(--text-secondary);">Copy it now — it won't be shown
+                                again</span>
+                        </div>
+                        <div
+                            style="display: flex; align-items: center; gap: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px;">
+                            <code id="newKeyValue"
+                                style="flex: 1; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 13px; word-break: break-all; line-height: 1.5;"></code>
+                            <button class="btn btn-primary" id="copyNewKey"
+                                style="padding: 8px 14px; font-size: 13px; flex-shrink: 0;">Copy</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Key</th>
+                                    <th>Created</th>
+                                    <th>Requests</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="keysBody">
+                                <tr>
+                                    <td colspan="5" class="table-empty">Loading API keys...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Logs Page -->
+            <section id="page-logs" class="page">
+                <div class="page-header">
+                    <h1>Request Logs</h1>
+                    <button class="btn btn-secondary" id="refreshLogsBtn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="23 4 23 10 17 10" />
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                        </svg>
+                        Refresh
+                    </button>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Account</th>
+                                    <th>Question</th>
+                                    <th>Answer</th>
+                                    <th>Tokens</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsBody">
+                                <tr>
+                                    <td colspan="5" class="table-empty">Loading logs...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Documentation Page -->
+            <section id="page-docs" class="page">
+                <div class="page-header">
+                    <h1>API Documentation</h1>
+                    <p class="page-desc">How to integrate with OpenGem</p>
+                </div>
+
+                <!-- Base URL -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2>Base URL</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <code class="doc-code-inline" id="docBaseUrl">Loading...</code>
+                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">All API requests
+                            should be made to this base URL.</p>
+                    </div>
+                </div>
+
+                <!-- Authentication -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2>Authentication</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <p style="font-size: 14px; margin-bottom: 12px;">Include your API key in the <code
+                                class="doc-code-inline">Authorization</code> header:</p>
+                        <div class="doc-code-block">
+                            <div class="doc-code-label">Header</div>
+                            <pre>Authorization: Bearer sk-your-api-key-here</pre>
+                        </div>
+                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 12px;">You can create API
+                            keys from the <strong>API Keys</strong> page.</p>
+                    </div>
+                </div>
+
+                <!-- Endpoint -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2>Chat Completions</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                            <span class="doc-method">POST</span>
+                            <code class="doc-code-inline">/v1beta/models/{model}:generateContent</code>
+                        </div>
+
+                        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Request Body</h3>
+                        <table class="table" style="margin-bottom: 20px;">
+                            <thead>
+                                <tr>
+                                    <th>Parameter</th>
+                                    <th>Type</th>
+                                    <th>Required</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>contents</code></td>
+                                    <td>array</td>
+                                    <td>Yes</td>
+                                    <td>Array of content objects with <code>role</code> and <code>parts</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>systemInstruction</code></td>
+                                    <td>object</td>
+                                    <td>No</td>
+                                    <td>Sets the behavior and instructions for the model</td>
+                                </tr>
+                                <tr>
+                                    <td><code>generationConfig</code></td>
+                                    <td>object</td>
+                                    <td>No</td>
+                                    <td>Configuration options like <code>temperature</code> and
+                                        <code>maxOutputTokens</code>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Content Parts</h3>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Field</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>text</code></td>
+                                    <td>The string text of the prompt</td>
+                                </tr>
+                                <tr>
+                                    <td><code>inlineData</code></td>
+                                    <td>For multimodal inputs (e.g. base64 image data and mimeType)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Code Examples -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header"
+                        style="display: flex; align-items: center; justify-content: space-between;">
+                        <h2>Code Examples</h2>
+                        <div class="code-tabs">
+                            <button class="code-tab active" data-lang="curl">cURL</button>
+                            <button class="code-tab" data-lang="python">Python</button>
+                            <button class="code-tab" data-lang="javascript">JavaScript</button>
+                            <button class="code-tab" data-lang="langchain">LangChain</button>
+                        </div>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+
+                        <!-- cURL -->
+                        <div class="code-panel active" data-lang="curl">
+                            <div class="doc-code-block" style="border-radius: 0;">
+                                <pre>curl -X POST "<span class="doc-base-url">http://localhost:3050</span>/v1beta/models/gemini-3.1-pro-preview:generateContent?key=sk-your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contents": [{
+      "parts": [{"text": "Hello!"}]
+    }]
+  }'</pre>
+                            </div>
+                        </div>
+
+                        <!-- Python -->
+                        <div class="code-panel" data-lang="python">
+                            <div class="doc-code-block" style="border-radius: 0;">
+                                <div class="doc-code-label">pip install google-genai</div>
+                                <pre>from google import genai
+
+client = genai.Client(
+    api_key="sk-your-api-key",
+    http_options={'api_version': 'v1beta', 'url': '<span class="doc-base-url">http://localhost:3050</span>'}
+)
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="Hello!",
+)
+
+print(response.text)</pre>
+                            </div>
+                        </div>
+
+                        <!-- JavaScript -->
+                        <div class="code-panel" data-lang="javascript">
+                            <div class="doc-code-block" style="border-radius: 0;">
+                                <div class="doc-code-label">npm install @google/genai</div>
+                                <pre>import { GoogleGenAI } from '@google/genai';
+
+const ai = new GoogleGenAI({
+  apiKey: 'sk-your-api-key',
+  baseUrl: '<span class="doc-base-url">http://localhost:3050</span>',
+});
+
+const response = await ai.models.generateContent({
+  model: 'gemini-3.1-pro-preview',
+  contents: 'Hello!'
+});
+
+console.log(response.text);</pre>
+                            </div>
+                        </div>
+
+                        <!-- LangChain -->
+                        <div class="code-panel" data-lang="langchain">
+                            <div class="doc-code-block" style="border-radius: 0;">
+                                <div class="doc-code-label">pip install langchain-google-genai</div>
+                                <pre>from langchain_google_genai import ChatGoogleGenerativeAI
+
+llm = ChatGoogleGenerativeAI(
+    google_api_key="sk-your-api-key",
+    client_options={"client_cert_source": None, "api_endpoint": "<span class="doc-base-url">http://localhost:3050</span>"},
+    model="gemini-3.1-pro-preview"
+)
+
+response = llm.invoke("Hello!")
+print(response.content)</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API Try It (Playground) -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2>API Playground</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <div class="playground-layout">
+                            <div class="playground-input">
+                                <div class="form-group" style="margin-bottom: 12px;">
+                                    <label for="pgApiKey">API Key</label>
+                                    <input type="password" id="pgApiKey" placeholder="Enter an API Key to test">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 12px;">
+                                    <label for="pgModel">Model</label>
+                                    <select id="pgModel" class="form-select"
+                                        style="width: 100%; height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font); font-size: 15px; color: var(--text-primary); background: var(--bg); outline: none;">
+                                        <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+                                        <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+                                        <option value="gemini-3-pro-preview">gemini-3-pro-preview</option>
+                                        <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                                        <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 16px;">
+                                    <label for="pgMessage">Message</label>
+                                    <textarea id="pgMessage" rows="4" placeholder="Enter your prompt here..."
+                                        style="width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font); font-size: 15px; color: var(--text-primary); background: var(--bg); outline: none; resize: vertical;"></textarea>
+                                </div>
+                                <button id="pgSendBtn" class="btn btn-primary btn-full">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" style="margin-right: 6px;">
+                                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                    </svg>
+                                    Send Request
+                                </button>
+                            </div>
+                            <div class="playground-output">
+                                <label
+                                    style="display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">Response</label>
+                                <div id="pgResponse" class="doc-code-block"
+                                    style="height: calc(100% - 24px); min-height: 240px; border-radius: var(--radius-sm); position: relative;">
+                                    <div id="pgLoading" class="hidden"
+                                        style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 12px;">
+                                        <div class="loading-spinner" style="width: 24px; height: 24px;"></div>
+                                        <span
+                                            style="color: var(--text-secondary); font-size: 13px;">Generating...</span>
+                                    </div>
+                                    <pre id="pgResponseContent"
+                                        style="padding: 16px; color: var(--text-tertiary); margin: 0; white-space: pre-wrap; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.6;">Awaiting response...</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Available Models -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2>Available Models</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+
+                        <h3
+                            style="font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+                            Gemini 3 <span class="doc-method"
+                                style="font-size: 10px; padding: 2px 6px; margin-left: 4px;">NEW</span></h3>
+                        <table class="table" style="margin-bottom: 20px;">
+                            <thead>
+                                <tr>
+                                    <th>Model</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>gemini-3.1-pro-preview</code></td>
+                                    <td>Advanced intelligence, complex problem-solving, agentic coding</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gemini-3-flash-preview</code></td>
+                                    <td>Frontier-class performance at a fraction of the cost</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gemini-3-pro-preview</code></td>
+                                    <td>State-of-the-art reasoning with advanced multimodal understanding</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h3
+                            style="font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+                            Gemini 2.5</h3>
+                        <table class="table" style="margin-bottom: 20px;">
+                            <thead>
+                                <tr>
+                                    <th>Model</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>gemini-2.5-flash</code></td>
+                                    <td>Best price-performance for low-latency, high-volume reasoning tasks</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gemini-2.5-flash-lite</code></td>
+                                    <td>Fastest and most budget-friendly multimodal model</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gemini-2.5-pro</code></td>
+                                    <td>Most advanced model for complex tasks, deep reasoning and coding</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h3
+                            style="font-size: 13px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+                            Previous (Deprecated)</h3>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Model</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>gemini-2.0-flash</code></td>
+                                    <td>Second generation workhorse, native tool use, 1M context window</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gemini-2.0-flash-lite</code></td>
+                                    <td>Fastest second generation, optimized for cost efficiency</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 12px;">Model availability
+                            depends on your connected Google accounts' access level. Deprecated models will be shut down
+                            soon — migrate to Gemini 2.5+.</p>
+                    </div>
+                </div>
+
+                <!-- Rate Limits -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Rate Limits</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Limit</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>API Requests</td>
+                                    <td>120 requests per minute per IP</td>
+                                </tr>
+                                <tr>
+                                    <td>Login Attempts</td>
+                                    <td>5 per 15 minutes per IP</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 12px;">When a Google
+                            account's quota is exhausted, requests are automatically routed to the next available
+                            account.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/admin.js"></script>
+</body>
+
+</html>
