@@ -356,6 +356,12 @@ OpenGem conceptually functions upon reverse-engineered synchronization exploitin
 
 ---
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=arifozgun/OpenGem&type=date&legend=top-left)](https://www.star-history.com/#arifozgun/OpenGem&type=date&legend=top-left)
+
+---
+
 <div align="center">
 
 **If OpenGem scaled your AI development efficiently, please consider giving it a ⭐ on GitHub!**
