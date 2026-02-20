@@ -5,3 +5,7 @@ dist
 **/.DS_Store
 # Setup configuration (contains Firebase keys, admin credentials)
 config.json
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
