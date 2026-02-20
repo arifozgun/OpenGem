@@ -30,9 +30,12 @@ describe('db factory', () => {
         }
     });
 
-    test('db is the sqlite backend when DB_PROVIDER=sqlite', () => {
+    test('db delegates to the sqlite backend when DB_PROVIDER=sqlite', () => {
         const { db } = require('../src/services/db');
         const { sqliteDb } = require('../src/services/sqlite');
-        expect(db).toBe(sqliteDb);
+        // db is a lazy proxy — verify it routes each method to sqliteDb
+        for (const method of ['getActiveAccounts', 'getAllAccounts', 'getStats']) {
+            expect((db as Record<string, unknown>)[method]).toBe((sqliteDb as Record<string, unknown>)[method]);
+        }
     });
 });

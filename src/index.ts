@@ -79,7 +79,10 @@ app.use((req, res, next) => {
 // --- SETUP ROUTES ---
 
 app.get('/api/setup/status', (req, res) => {
-    res.json({ configured: isConfigured() });
+    res.json({
+        configured: isConfigured(),
+        sqliteMode: process.env.DB_PROVIDER === 'sqlite',
+    });
 });
 
 app.post('/api/setup', async (req, res) => {

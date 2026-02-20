@@ -1,7 +1,8 @@
 // ===== Setup Wizard Logic =====
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Check if already configured
+    // Check if already configured, and detect SQLite mode
+    let sqliteMode = false;
     try {
         const res = await fetch('/api/setup/status');
         const data = await res.json();
@@ -9,6 +10,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.location.href = '/';
             return;
         }
+        sqliteMode = data.sqliteMode === true;
     } catch (e) {
         // Continue with setup
     }
@@ -19,7 +21,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const stepContents = document.querySelectorAll('.step-content');
     const errorEl = document.getElementById('setupError');
 
-    let currentStep = 1;
+    // In SQLite mode, skip the Firebase step entirely
+    if (sqliteMode) {
+        document.querySelector('.step[data-step="1"]').style.display = 'none';
+        stepLines[0].style.display = 'none';
+        document.getElementById('backToStep1').style.display = 'none';
+    }
+
+    let currentStep = sqliteMode ? 2 : 1;
 
     function showStep(step) {
         currentStep = step;
@@ -52,8 +61,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         errorEl.classList.remove('hidden');
     }
 
+    // Show the correct starting step
+    showStep(currentStep);
+
     // Step 1 → 2
     document.getElementById('nextToStep2').addEventListener('click', () => {
+        if (sqliteMode) { showStep(2); return; }
+
         const fields = ['fb-apiKey', 'fb-authDomain', 'fb-projectId', 'fb-storageBucket', 'fb-messagingSenderId', 'fb-appId'];
         const missing = fields.filter(id => !document.getElementById(id).value.trim());
 

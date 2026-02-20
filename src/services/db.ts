@@ -46,4 +46,12 @@ export function createDb(): DatabaseService {
     return require('./firebase').default as DatabaseService;
 }
 
-export const db = createDb();
+// Lazy proxy: defers backend selection until first use so that dotenv.config()
+// in index.ts has a chance to run before DB_PROVIDER is read.
+let _instance: DatabaseService | null = null;
+export const db: DatabaseService = new Proxy({} as DatabaseService, {
+    get(_target, prop: string) {
+        if (!_instance) _instance = createDb();
+        return (_instance as unknown as Record<string, unknown>)[prop];
+    },
+});
