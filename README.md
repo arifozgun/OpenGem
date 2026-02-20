@@ -39,6 +39,10 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 | **Auto Recovery** | Exhausted Google accounts auto-reactivate seamlessly after a 60-minute cooldown period. |
 | **Firebase Powered** | Zero-configuration database implementation using Firebase Firestore. |
 
+<div align="center">
+<img src="public/screenshots/opengem-overview.jpg" alt="OpenGem Dashboard Overview" width="800">
+</div>
+
 ---
 
 ## Quick Start
@@ -66,6 +70,10 @@ Navigate to `http://localhost:3050` in your web browser. The **Setup Wizard** wi
 1. **Firebase Configuration** — Input your Firebase project credentials.
 2. **Admin Account** — Create your dashboard administrator login.
 3. **API Key Generation** — Your first operational API key will be generated instantly.
+
+<div align="center">
+<img src="public/screenshots/opengem-setup-firebase.jpg" alt="OpenGem Setup Wizard" width="800">
+</div>
 
 ### Firebase Setup Guide
 
@@ -213,6 +221,16 @@ After completing the initial setup, access the administrative panel at `http://l
 4. OpenGem immediately integrates the account into its active load-balanced rotation pool.
 
 > **Optimization Tip:** Connect multiple Google accounts to linearly scale your available free quota. Google allocates individual free-tier quotas strictly on a per-account basis.
+
+<div align="center">
+<img src="public/screenshots/opengem-accounts.jpg" alt="OpenGem Accounts Panel" width="800">
+</div>
+
+### Request Logs
+
+<div align="center">
+<img src="public/screenshots/opengem-logs.jpg" alt="OpenGem Request Logs" width="800">
+</div>
 
 ---
 
