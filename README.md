@@ -37,7 +37,7 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 | **One-Click Setup** | Intuitive, browser-based setup wizard requiring no manual configuration files. |
 | **Secure by Default** | Built with JWT authentication, rate limiting, and Helmet.js security headers. |
 | **Auto Recovery** | Exhausted Google accounts auto-reactivate seamlessly after a 60-minute cooldown period. |
-| **Flexible Database** | Choose between zero-configuration Firebase Firestore or a completely offline Local JSON database. |
+| **Flexible Database** | Choose between SQLite (recommended), Local JSON file, or Firebase Firestore. Switch backends live from the dashboard. |
 
 <div align="center">
 <img src="public/screenshots/opengem-overview.jpg" alt="OpenGem Dashboard Overview" width="800">
@@ -67,7 +67,7 @@ npm run dev
 ```
 
 Navigate to `http://localhost:3050` in your web browser. The **Setup Wizard** will automatically guide you through:
-1. **Database Configuration** — Choose between Local JSON storage or Firebase Firestore.
+1. **Database Backend** — Choose SQLite (recommended), Local JSON, or Firebase Firestore.
 2. **Admin Account** — Create your dashboard administrator login.
 3. **API Key Generation** — Your first operational API key will be generated instantly.
 
@@ -283,9 +283,13 @@ opengem/
 │   │   └── auth.ts      # JWT administrative authentication interceptors
 │   └── services/
 │       ├── config.ts    # Centralized state management & AES-256 encryption
-│       ├── firebase.ts  # Integrated Firestore schema operations
+│       ├── database.ts  # IDatabase interface + backend factory
+│       ├── sqlite.ts    # SQLite backend (recommended)
+│       ├── localDb.ts   # Local JSON file backend
+│       ├── firebase.ts  # Firebase Firestore backend
 │       ├── gemini.ts    # Standardized Gemini API & OAuth connectors
 │       └── http.ts      # Native resilient HTTP client integration
+├── Dockerfile           # Multi-stage production image
 ├── .env.example         # Template environment variables
 ├── .htaccess            # Production file access restrictions
 ├── app.js               # Production entry point
@@ -307,7 +311,47 @@ opengem/
 3. Configure the designated Node.js application within cPanel targeting `app.js`.
 4. Access the designated domain to initialize the Setup Wizard securely.
 
-### VPS / Docker Deployment
+### Docker (recommended for self-hosting)
+
+The easiest way to run OpenGem in production. SQLite is the default backend — your data persists in a Docker volume across restarts.
+
+**Pull the pre-built image:**
+```bash
+docker pull ghcr.io/arifozgun/opengem:latest
+
+docker run -d \
+  -p 3050:3050 \
+  -v opengem-data:/app/data \
+  --name opengem \
+  ghcr.io/arifozgun/opengem:latest
+```
+
+Navigate to `http://localhost:3050` to complete setup. The SQLite database is automatically stored in the `opengem-data` volume.
+
+**Or build the image yourself:**
+```bash
+git clone https://github.com/arifozgun/OpenGem.git
+cd OpenGem
+docker build -t opengem .
+
+docker run -d \
+  -p 3050:3050 \
+  -v opengem-data:/app/data \
+  --name opengem \
+  opengem
+```
+
+> **Production tip:** If you're running behind a reverse proxy or on a public domain, set your OAuth callback URL:
+> ```bash
+> docker run -d \
+>   -p 3050:3050 \
+>   -v opengem-data:/app/data \
+>   -e OAUTH_REDIRECT_URI=https://yourdomain.com/api/auth/callback \
+>   --name opengem \
+>   ghcr.io/arifozgun/opengem:latest
+> ```
+
+### VPS / Manual Deployment
 
 ```bash
 # Generate optimized production artifacts
@@ -337,7 +381,6 @@ Community engineering optimization is actively encouraged:
 ### Roadmap & Pipeline
 - Streaming response protocol support (SSE)
 - Expanding multi-model architecture (Gemini-Pro, Gemini-Flash scaling)
-- Docker Compose ecosystem orchestration
 - Integrated Web UI debugging infrastructure
 - Webhook notifications for granular quota alerting
 - Per-API Key differential rate limiting overrides
