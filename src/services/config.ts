@@ -37,7 +37,7 @@ export interface AppConfig {
     setupCompleted: boolean;
     setupCompletedAt?: string;
     /** Which database backend to use. Defaults to 'firebase' for backward compat. */
-    dbBackend?: 'firebase' | 'local';
+    dbBackend?: 'firebase' | 'local' | 'sqlite';
 }
 
 // The raw JSON shape on disk (encrypted values are strings)
@@ -58,7 +58,7 @@ interface EncryptedConfig {
     jwtSecret: string; // AES-256-GCM encrypted
     setupCompleted: boolean;
     setupCompletedAt?: string;
-    dbBackend?: 'firebase' | 'local';
+    dbBackend?: 'firebase' | 'local' | 'sqlite';
 }
 
 // --- Encryption Key Management ---
@@ -292,7 +292,7 @@ export function saveConfig(config: AppConfig): void {
  * Also updates the Firebase config if switching to firebase.
  */
 export function switchDatabaseBackend(
-    to: 'firebase' | 'local',
+    to: 'firebase' | 'local' | 'sqlite',
     firebaseConfig?: AppConfig['firebase']
 ): void {
     if (!fs.existsSync(CONFIG_PATH)) {

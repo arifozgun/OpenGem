@@ -1,6 +1,6 @@
 /**
  * IDatabase — abstract interface for all database backends.
- * Both Firebase Firestore and the local JSON file backend implement this.
+ * Three backends are available: Firebase Firestore, local JSON file, and SQLite.
  */
 
 export interface RequestLog {
@@ -103,7 +103,9 @@ export function getDatabase(): IDatabase {
         return _cachedDb;
     }
 
-    if (backend === 'local') {
+    if (backend === 'sqlite') {
+        _cachedDb = getSqliteDb();
+    } else if (backend === 'local') {
         _cachedDb = getLocalDb();
     } else {
         _cachedDb = getFirebaseDb();
@@ -116,6 +118,11 @@ export function getDatabase(): IDatabase {
 export function invalidateDbCache(): void {
     _cachedDb = null;
     _cachedBackend = null;
+}
+
+function getSqliteDb(): IDatabase {
+    const { sqliteDb } = require('./sqlite');
+    return sqliteDb;
 }
 
 function getLocalDb(): IDatabase {

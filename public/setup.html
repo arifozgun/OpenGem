@@ -57,17 +57,18 @@
                         the dashboard.</p>
                 </div>
                 <div class="backend-grid">
-                    <button type="button" class="backend-card selected" id="backendLocal" data-backend="local">
+                    <button type="button" class="backend-card selected" id="backendSqlite" data-backend="sqlite">
                         <div class="backend-icon">
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="1.5">
-                                <rect x="2" y="3" width="20" height="14" rx="2" />
-                                <path d="M8 21h8M12 17v4" />
+                                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                                <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" />
+                                <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />
                             </svg>
                         </div>
                         <div class="backend-info">
-                            <strong>Local File</strong>
-                            <span>Stored in <code>data/db.json</code> on the server. No external services needed.</span>
+                            <strong>SQLite</strong>
+                            <span>Single-file embedded database. ACID-safe, crash-proof, and fast. Ideal for production self-hosting.</span>
                         </div>
                         <div class="backend-check">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -76,6 +77,25 @@
                             </svg>
                         </div>
                         <span class="backend-badge">Recommended</span>
+                    </button>
+                    <button type="button" class="backend-card" id="backendLocal" data-backend="local">
+                        <div class="backend-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.5">
+                                <rect x="2" y="3" width="20" height="14" rx="2" />
+                                <path d="M8 21h8M12 17v4" />
+                            </svg>
+                        </div>
+                        <div class="backend-info">
+                            <strong>Local JSON File</strong>
+                            <span>Stored in <code>data/db.json</code> on the server. Simple, no extra dependencies.</span>
+                        </div>
+                        <div class="backend-check">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5">
+                                <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                        </div>
                     </button>
                     <button type="button" class="backend-card" id="backendFirebase" data-backend="firebase">
                         <div class="backend-icon">
@@ -179,7 +199,70 @@
                     </button>
                 </div>
             </div>
-            <!-- Local backend: just a confirmation card -->
+            <!-- SQLite backend: confirmation card -->
+            <div class="step-card hidden" id="step2Sqlite">
+                <div class="step-card-header">
+                    <h2>SQLite Database Confirmed</h2>
+                    <p>OpenGem will store all data in <code>data/opengem.db</code> on your server using SQLite — a
+                        production-grade embedded database with full ACID guarantees.</p>
+                </div>
+                <div class="local-confirm-info">
+                    <div class="info-row">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)"
+                            stroke-width="2">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>ACID transactions — a crash mid-write cannot corrupt your data</span>
+                    </div>
+                    <div class="info-row">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)"
+                            stroke-width="2">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>WAL mode — concurrent reads without blocking writes</span>
+                    </div>
+                    <div class="info-row">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)"
+                            stroke-width="2">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>All tokens are AES-256-GCM encrypted at rest</span>
+                    </div>
+                    <div class="info-row">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)"
+                            stroke-width="2">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>API keys stored as SHA-256 hashes (never plaintext)</span>
+                    </div>
+                    <div class="info-row">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="8" x2="12" y2="12" />
+                            <line x1="12" y1="16" x2="12.01" y2="16" />
+                        </svg>
+                        <span>Back up <code>data/opengem.db</code> periodically — it is not synced to the cloud</span>
+                    </div>
+                </div>
+                <div class="step-actions">
+                    <button type="button" class="btn btn-ghost" id="backToStep1Sqlite">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="15 18 9 12 15 6" />
+                        </svg>
+                        Back
+                    </button>
+                    <button type="button" class="btn btn-primary" id="nextToStep3Sqlite">
+                        Continue
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <!-- Local JSON backend: confirmation card -->
             <div class="step-card hidden" id="step2Local">
                 <div class="step-card-header">
                     <h2>Local Database Confirmed</h2>

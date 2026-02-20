@@ -7,3 +7,6 @@ dist
 config.json
 # Local database (contains tokens and user data — never commit)
 data/
+*.db
+*.db-shm
+*.db-wal

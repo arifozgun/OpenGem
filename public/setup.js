@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const errorEl = document.getElementById('setupError');
 
     let currentStep = 1;
-    let selectedBackend = 'local'; // default
+    let selectedBackend = 'sqlite'; // default
 
     // --- Backend Selector ---
     document.querySelectorAll('.backend-card').forEach(card => {
@@ -31,8 +31,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // Set default 'local' as selected on load
-    document.getElementById('backendLocal').classList.add('selected');
+    // Set default 'sqlite' as selected on load
+    document.getElementById('backendSqlite').classList.add('selected');
 
     function showStep(step) {
         currentStep = step;
@@ -54,7 +54,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById(`step-${step}`).classList.add('active');
 
         // Update step 2 label
-        document.getElementById('step2Label').textContent = selectedBackend === 'firebase' ? 'Firebase' : 'Local DB';
+        const labelMap = { firebase: 'Firebase', local: 'Local DB', sqlite: 'SQLite' };
+        document.getElementById('step2Label').textContent = labelMap[selectedBackend] || 'Config';
 
         errorEl.classList.add('hidden');
     }
@@ -67,16 +68,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Step 1 → 2 ---
     document.getElementById('nextToStep2').addEventListener('click', () => {
-        // Update step 2 visuals based on selected backend
-        const step2Firebase = document.getElementById('step2Firebase');
-        const step2Local = document.getElementById('step2Local');
+        // Show the correct step-2 card and hide the others
+        document.getElementById('step2Firebase').classList.add('hidden');
+        document.getElementById('step2Local').classList.add('hidden');
+        document.getElementById('step2Sqlite').classList.add('hidden');
 
         if (selectedBackend === 'firebase') {
-            step2Firebase.classList.remove('hidden');
-            step2Local.classList.add('hidden');
+            document.getElementById('step2Firebase').classList.remove('hidden');
+        } else if (selectedBackend === 'sqlite') {
+            document.getElementById('step2Sqlite').classList.remove('hidden');
         } else {
-            step2Firebase.classList.add('hidden');
-            step2Local.classList.remove('hidden');
+            document.getElementById('step2Local').classList.remove('hidden');
         }
 
         showStep(2);
@@ -95,6 +97,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         showStep(3);
     });
 
+    // --- Step 2 SQLite → 3 ---
+    document.getElementById('nextToStep3Sqlite').addEventListener('click', () => {
+        showStep(3);
+    });
+
     // --- Step 2 Local → 3 ---
     document.getElementById('nextToStep3Local').addEventListener('click', () => {
         showStep(3);
@@ -102,6 +109,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Back buttons ---
     document.getElementById('backToStep1').addEventListener('click', () => showStep(1));
+    document.getElementById('backToStep1Sqlite').addEventListener('click', () => showStep(1));
     document.getElementById('backToStep1Local').addEventListener('click', () => showStep(1));
     document.getElementById('backToStep2').addEventListener('click', () => showStep(2));
 

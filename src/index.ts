@@ -95,7 +95,8 @@ app.post('/api/setup', async (req, res) => {
     }
 
     const { firebase, admin, dbBackend } = req.body;
-    const backend: 'firebase' | 'local' = dbBackend === 'local' ? 'local' : 'firebase';
+    const VALID_BACKENDS = ['firebase', 'local', 'sqlite'] as const;
+    const backend: 'firebase' | 'local' | 'sqlite' = VALID_BACKENDS.includes(dbBackend) ? dbBackend : 'sqlite';
 
     // Validate Firebase config only when firebase backend is chosen
     if (backend === 'firebase') {
@@ -390,8 +391,8 @@ app.get('/api/admin/db-status', requireAdmin, (req, res) => {
 app.post('/api/admin/db-switch', requireAdmin, async (req, res) => {
     const { to, firebase } = req.body;
 
-    if (to !== 'firebase' && to !== 'local') {
-        return res.status(400).json({ error: 'Invalid backend. Must be "firebase" or "local".' });
+    if (to !== 'firebase' && to !== 'local' && to !== 'sqlite') {
+        return res.status(400).json({ error: 'Invalid backend. Must be "firebase", "local", or "sqlite".' });
     }
 
     const currentConfig = getConfig();
@@ -494,7 +495,7 @@ app.post('/v1beta/models/:model\\::action', apiLimiter, requireApiKey, (req, res
 const PORT = process.env.PORT || 3050;
 const EXHAUSTION_COOLDOWN_MS = 60 * 60 * 1000; // 60 minutes
 
-app.listen(PORT, () => {
+if (process.env.NODE_ENV !== 'test') app.listen(PORT, () => {
     console.log(`🚀 OpenGem running on http://localhost:${PORT}`);
 
     if (!isConfigured()) {

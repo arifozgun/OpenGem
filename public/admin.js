@@ -140,7 +140,10 @@ async function loadSettings() {
         const data = await res.json();
         currentDbBackend = data.backend;
 
-        if (data.backend === 'local') {
+        if (data.backend === 'sqlite') {
+            el.innerHTML = '<span class="badge-db badge-db-local"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></svg> SQLite (data/opengem.db)</span>';
+            if (noteEl) noteEl.innerHTML = '<div class="db-note">Data is stored in a local SQLite database. Back up <code>data/opengem.db</code> periodically.</div>';
+        } else if (data.backend === 'local') {
             el.innerHTML = '<span class="badge-db badge-db-local"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> Local File (data/db.json)</span>';
             if (noteEl) noteEl.innerHTML = '<div class="db-note">Data is stored locally on your server. Back up <code>data/db.json</code> periodically.</div>';
         } else {
@@ -165,10 +168,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!switchBtn) return; // Settings page not loaded yet
 
+    function getSelectedTarget() {
+        const checked = document.querySelector('input[name="targetBackend"]:checked');
+        return checked ? checked.value : null;
+    }
+
     function openModal() {
-        const target = currentDbBackend === 'local' ? 'firebase' : 'local';
-        if (titleEl) titleEl.textContent = `Switch to ${target === 'firebase' ? 'Firebase Firestore' : 'Local File'}`;
-        if (fbFields) fbFields.classList.toggle('hidden', target !== 'firebase');
+        // Build radio options for every backend except the current one
+        const backends = [
+            { value: 'sqlite', label: 'SQLite (recommended)' },
+            { value: 'local', label: 'Local JSON File' },
+            { value: 'firebase', label: 'Firebase Firestore' },
+        ];
+        const selectorEl = document.getElementById('modalBackendSelector');
+        if (selectorEl) {
+            selectorEl.innerHTML = backends
+                .filter(b => b.value !== currentDbBackend)
+                .map((b, i) => `
+                    <label class="backend-radio-option">
+                        <input type="radio" name="targetBackend" value="${b.value}" ${i === 0 ? 'checked' : ''}>
+                        ${b.label}
+                    </label>`)
+                .join('');
+            // Show/hide Firebase fields when selection changes
+            selectorEl.querySelectorAll('input[name="targetBackend"]').forEach(radio => {
+                radio.addEventListener('change', () => {
+                    if (fbFields) fbFields.classList.toggle('hidden', radio.value !== 'firebase');
+                });
+            });
+        }
+        // Show Firebase fields if firebase is the default first selection
+        const firstTarget = backends.find(b => b.value !== currentDbBackend);
+        if (fbFields) fbFields.classList.toggle('hidden', firstTarget?.value !== 'firebase');
+        if (titleEl) titleEl.textContent = 'Switch Database Backend';
         if (errorEl) errorEl.classList.add('hidden');
         if (modal) modal.classList.remove('hidden');
     }
@@ -244,7 +276,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (confirmBtn) confirmBtn.addEventListener('click', async () => {
-        const target = currentDbBackend === 'local' ? 'firebase' : 'local';
+        const target = getSelectedTarget();
+        if (!target) return;
 
         let body = { to: target };
         if (target === 'firebase') {
