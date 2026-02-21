@@ -607,6 +607,16 @@ body {
     display: none;
 }
 
+.badge-task {
+    background: rgba(0, 122, 255, 0.1);
+    color: var(--accent);
+}
+
+.badge-task::before {
+    display: none;
+}
+
+
 /* ===== LOG CELLS ===== */
 .cell-truncate {
     max-width: 260px;
@@ -1181,6 +1191,8 @@ body {
 
 .modal-body {
     padding: 20px 24px;
+    max-height: calc(100vh - 130px);
+    overflow-y: auto;
 }
 
 .modal-warning {
@@ -1857,7 +1869,7 @@ body {
     color: var(--text-primary);
     white-space: pre-wrap;
     word-wrap: break-word;
-    max-height: 400px;
+    max-height: 40vh;
     overflow-y: auto;
 }
 

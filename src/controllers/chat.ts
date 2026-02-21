@@ -49,7 +49,7 @@ function resolveModel(model: string): string {
 
 export const handleGenerateContent = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { contents, generationConfig, systemInstruction } = req.body;
+        const { contents, generationConfig, systemInstruction, tools, toolConfig, tool_config } = req.body;
         let model = resolveModel(req.params.model as string);
 
         if (!contents || !Array.isArray(contents)) {
@@ -60,11 +60,13 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
         contents.forEach((c: any) => { if (!c.role) c.role = 'user'; });
 
         const action = req.params.action;
+        const finalToolConfig = toolConfig || tool_config;
+
         if (action === 'streamGenerateContent') {
-            return handleStreamGenerateContent(req, res, model, contents, generationConfig, systemInstruction);
+            return handleStreamGenerateContent(req, res, model, contents, generationConfig, systemInstruction, tools, finalToolConfig);
         }
 
-        const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, systemInstruction);
+        const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, systemInstruction, tools, finalToolConfig);
 
         if (!result) {
             res.status(503).json({ error: 'All Gemini accounts exhausted or failed.' });
@@ -80,7 +82,7 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
 
 // ─── Non-streaming account rotation ─────────────────────
 
-export async function tryGenerateContentWithAccounts(model: string, contents: any[], generationConfig?: any, systemInstruction?: any): Promise<any | null> {
+export async function tryGenerateContentWithAccounts(model: string, contents: any[], generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any): Promise<any | null> {
     const db = getDatabase();
     const accounts = await getReadyAccount(db);
 
@@ -96,6 +98,8 @@ export async function tryGenerateContentWithAccounts(model: string, contents: an
             const requestPayload: any = { contents };
             if (generationConfig) requestPayload.generationConfig = generationConfig;
             if (systemInstruction) requestPayload.systemInstruction = systemInstruction;
+            if (tools) requestPayload.tools = tools;
+            if (toolConfig) requestPayload.toolConfig = toolConfig;
 
             const response = await nativeFetch(`${GEMINI_API_BASE}:generateContent`, {
                 method: 'POST',
@@ -137,10 +141,22 @@ export async function tryGenerateContentWithAccounts(model: string, contents: an
                     }
                 }
 
-                // Mark account as exhausted
-                await db.updateAccount(account.email, { isActive: false, lastUsedAt: new Date(), exhaustedAt: new Date() });
-                await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                logRequest(db, account.email, contents, 'ERROR 429: Account exhausted / Quota Limit Reached', 0, false);
+                // Check the error message to distinguish between Rate Limit and Quota
+                let isQuotaExhausted = false;
+                try {
+                    const text = await response.text();
+                    isQuotaExhausted = text.toLowerCase().includes('quota');
+                } catch (e) { /* ignore */ }
+
+                if (isQuotaExhausted) {
+                    await db.updateAccount(account.email, { isActive: false, lastUsedAt: new Date(), exhaustedAt: new Date() });
+                    await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
+                    logRequest(db, account.email, contents, 'ERROR 429: Account exhausted / Quota Limit Reached', 0, false);
+                } else {
+                    // It's just a rate limit, bounce it to the bottom of the active queue
+                    await db.updateAccount(account.email, { lastUsedAt: new Date() });
+                    // Don't log a rate bounce as a failure
+                }
                 continue;
             }
 
@@ -176,7 +192,7 @@ export async function tryGenerateContentWithAccounts(model: string, contents: an
 
 // ─── SSE Streaming ──────────────────────────────────────
 
-async function handleStreamGenerateContent(req: Request, res: Response, model: string, contents: any[], generationConfig?: any, systemInstruction?: any): Promise<void> {
+async function handleStreamGenerateContent(req: Request, res: Response, model: string, contents: any[], generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any): Promise<void> {
     const db = getDatabase();
     const accounts = await getReadyAccount(db);
 
@@ -192,6 +208,8 @@ async function handleStreamGenerateContent(req: Request, res: Response, model: s
             const requestPayload: any = { contents };
             if (generationConfig) requestPayload.generationConfig = generationConfig;
             if (systemInstruction) requestPayload.systemInstruction = systemInstruction;
+            if (tools) requestPayload.tools = tools;
+            if (toolConfig) requestPayload.toolConfig = toolConfig;
 
             const { status, stream } = await nativeFetchStream(`${GEMINI_API_BASE}:streamGenerateContent?alt=sse`, {
                 method: 'POST',
@@ -206,9 +224,25 @@ async function handleStreamGenerateContent(req: Request, res: Response, model: s
 
             if (status === 429) {
                 console.warn(`⏳ Stream: Account ${account.email} hit 429 — trying next account...`);
-                await db.updateAccount(account.email, { isActive: false, lastUsedAt: new Date(), exhaustedAt: new Date() });
-                await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                stream.resume(); // drain it
+
+                let isQuotaExhausted = false;
+                try {
+                    const chunks: Buffer[] = [];
+                    for await (const chunk of stream) chunks.push(chunk as Buffer);
+                    const text = Buffer.concat(chunks).toString('utf-8');
+                    isQuotaExhausted = text.toLowerCase().includes('quota');
+                } catch {
+                    // If we can't parse it, we must drain the stream anyway
+                    stream.resume();
+                }
+
+                if (isQuotaExhausted) {
+                    await db.updateAccount(account.email, { isActive: false, lastUsedAt: new Date(), exhaustedAt: new Date() });
+                    await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
+                } else {
+                    await db.updateAccount(account.email, { lastUsedAt: new Date() });
+                }
+
                 continue;
             }
 
@@ -248,7 +282,7 @@ async function handleStreamGenerateContent(req: Request, res: Response, model: s
                                 || parsed.response?.candidates?.[0]?.content?.parts;
                             if (parts) {
                                 for (const part of parts) {
-                                    if (part.text && !part.thought) {
+                                    if (part.text) {
                                         fullAnswer += part.text;
                                     }
                                 }
@@ -258,18 +292,31 @@ async function handleStreamGenerateContent(req: Request, res: Response, model: s
                             if (usage?.totalTokenCount) {
                                 tokenUsage = usage.totalTokenCount;
                             }
-                        } catch { /* ignore parse errors */ }
-                        res.write(line + '\n\n');
+
+                            // Unwrap v1internal format → standard Gemini API format
+                            // Upstream: {response: {candidates:[...]}, usageMetadata:{...}}
+                            // Standard: {candidates:[...], usageMetadata:{...}}
+                            let forwarded = parsed;
+                            if (parsed.response) {
+                                forwarded = { ...parsed.response };
+                                if (parsed.usageMetadata) {
+                                    forwarded.usageMetadata = parsed.usageMetadata;
+                                }
+                            }
+                            res.write(`data: ${JSON.stringify(forwarded)}\n\n`);
+                        } catch {
+                            // Forward raw line if parse fails
+                            res.write(line + '\n\n');
+                        }
                     }
                 }
             });
 
             stream.on('end', () => {
-                res.write('data: [DONE]\n\n');
                 res.end();
 
                 db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: tokenUsage }).catch(() => { });
-                logRequest(db, account.email, contents, fullAnswer || '(streamed)', tokenUsage, true);
+                logRequest(db, account.email, contents, fullAnswer, tokenUsage, true);
                 console.log(`✅ Stream fulfilled by ${account.email} [${model}]`);
             });
 
@@ -297,7 +344,7 @@ async function handleStreamGenerateContent(req: Request, res: Response, model: s
 
 export async function handleAdminChat(req: Request, res: Response): Promise<void> {
     try {
-        const { contents, model: requestedModel, generationConfig, systemInstruction } = req.body;
+        const { contents, model: requestedModel, generationConfig, systemInstruction, tools, toolConfig, tool_config } = req.body;
         const model = resolveModel(requestedModel || DEFAULT_MODEL);
 
         if (!contents || !Array.isArray(contents)) {
@@ -330,6 +377,9 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
                 const requestPayload: any = { contents };
                 if (generationConfig) requestPayload.generationConfig = generationConfig;
                 if (systemInstruction) requestPayload.systemInstruction = systemInstruction;
+                const finalToolConfig = toolConfig || tool_config;
+                if (tools) requestPayload.tools = tools;
+                if (finalToolConfig) requestPayload.toolConfig = finalToolConfig;
 
                 const { status, stream } = await nativeFetchStream(`${GEMINI_API_BASE}:streamGenerateContent?alt=sse`, {
                     method: 'POST',
@@ -344,8 +394,23 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
 
                 if (status === 429) {
                     console.warn(`⏳ Chat: Account ${account.email} hit 429 — trying next...`);
-                    await db.updateAccount(account.email, { isActive: false, lastUsedAt: new Date(), exhaustedAt: new Date() });
-                    stream.resume();
+
+                    let isQuotaExhausted = false;
+                    try {
+                        const chunks: Buffer[] = [];
+                        for await (const chunk of stream) chunks.push(chunk as Buffer);
+                        const text = Buffer.concat(chunks).toString('utf-8');
+                        isQuotaExhausted = text.toLowerCase().includes('quota');
+                    } catch {
+                        stream.resume();
+                    }
+
+                    if (isQuotaExhausted) {
+                        await db.updateAccount(account.email, { isActive: false, lastUsedAt: new Date(), exhaustedAt: new Date() });
+                    } else {
+                        await db.updateAccount(account.email, { lastUsedAt: new Date() });
+                    }
+
                     continue;
                 }
 
@@ -377,7 +442,7 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
                                     || parsed.response?.candidates?.[0]?.content?.parts;
                                 if (parts) {
                                     for (const part of parts) {
-                                        if (part.text && !part.thought) {
+                                        if (part.text) {
                                             fullAnswer += part.text;
                                         }
                                     }
@@ -395,10 +460,9 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
 
                 await new Promise<void>((resolve, reject) => {
                     stream.on('end', () => {
-                        res.write('data: [DONE]\n\n');
                         res.end();
                         db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: tokenUsage }).catch(() => { });
-                        logRequest(db, account.email, contents, fullAnswer || '(chat streamed)', tokenUsage, true);
+                        logRequest(db, account.email, contents, fullAnswer, tokenUsage, true);
                         console.log(`✅ Chat stream fulfilled by ${account.email} [${model}]`);
                         resolve();
                     });
@@ -432,7 +496,24 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
 // ─── Logging helper ─────────────────────────────────────
 
 function logRequest(db: any, email: string, contents: any[], answer: string, tokens: number, success: boolean) {
-    const questionText = contents?.[contents.length - 1]?.parts?.[0]?.text || 'Unknown';
+    let questionText = 'Unknown';
+
+    if (contents && contents.length > 0) {
+        const lastContent = contents[contents.length - 1];
+        if (lastContent && Array.isArray(lastContent.parts)) {
+            const partsTexts = lastContent.parts.map((part: any) => {
+                if (part.text) return part.text;
+                if (part.functionCall) return `[Tool Call: ${part.functionCall.name}]`;
+                if (part.functionResponse) return `[Tool Response: ${part.functionResponse.name}]`;
+                return '';
+            }).filter(Boolean);
+
+            if (partsTexts.length > 0) {
+                questionText = partsTexts.join('\\n');
+            }
+        }
+    }
+
     db.addRequestLog({
         accountEmail: email,
         question: questionText,

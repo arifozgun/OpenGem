@@ -643,18 +643,37 @@ function renderLogsBatch() {
         const row = document.createElement('tr');
         row.className = 'lazy-fade-in';
 
+        const isTask = log.question && (
+            log.question.includes('[TASK RESUMPTION]') ||
+            log.question.includes('<task>') ||
+            log.question.includes('toolConfig') ||
+            (log.question === 'Unknown' && log.answer && log.answer.includes('**'))
+        );
+
         const timeTd = document.createElement('td');
         timeTd.className = 'cell-time';
         timeTd.textContent = formatTime(log.timestamp);
 
         const emailTd = document.createElement('td');
         emailTd.className = 'cell-email';
-        emailTd.textContent = log.accountEmail;
+
+        let emailHtml = log.accountEmail;
+        if (isTask) {
+            emailHtml += ' <span class="badge badge-task" style="margin-left: 6px;" title="This request appears to be an automated agent task">Task</span>';
+        }
+        emailTd.innerHTML = emailHtml;
 
         const questionTd = document.createElement('td');
         questionTd.className = 'cell-truncate';
-        questionTd.textContent = log.question || '—';
-        questionTd.title = log.question || '';
+        if (isTask) {
+            questionTd.style.fontFamily = 'var(--font)';
+            questionTd.style.color = 'var(--accent)';
+            questionTd.style.fontWeight = '600';
+            questionTd.textContent = 'Automated Agent Task';
+        } else {
+            questionTd.textContent = log.question || '—';
+            questionTd.title = log.question || '';
+        }
 
         const answerTd = document.createElement('td');
         answerTd.className = 'cell-truncate';
@@ -713,11 +732,25 @@ function showLogDetail(log) {
         ? '<span class="badge badge-active">Success</span>'
         : '<span class="badge badge-inactive">Error</span>';
 
+    const isTask = log.question && (
+        log.question.includes('[TASK RESUMPTION]') ||
+        log.question.includes('<task>') ||
+        log.question.includes('toolConfig') ||
+        (log.question === 'Unknown' && log.answer && log.answer.includes('**'))
+    );
+
+    const taskBadge = isTask ? '<span class="badge badge-task" style="margin-left: 8px;">Agent Task</span>' : '';
+
+    const renderText = (text) => {
+        if (!text) return '—';
+        return escapeHtml(text);
+    };
+
     body.innerHTML = `
         <div class="log-detail-grid">
             <div class="log-detail-item">
                 <span class="log-detail-label">Time</span>
-                <span class="log-detail-value">${fullTime}</span>
+                <span class="log-detail-value">${fullTime}${taskBadge}</span>
             </div>
             <div class="log-detail-item">
                 <span class="log-detail-label">Account</span>
@@ -734,11 +767,11 @@ function showLogDetail(log) {
         </div>
         <div class="log-detail-section">
             <div class="log-detail-section-title">Question</div>
-            <div class="log-detail-text">${escapeHtml(log.question || '—')}</div>
+            <div class="log-detail-text">${renderText(log.question)}</div>
         </div>
         <div class="log-detail-section">
             <div class="log-detail-section-title">Answer</div>
-            <div class="log-detail-text">${escapeHtml(log.answer || '—')}</div>
+            <div class="log-detail-text">${renderText(log.answer)}</div>
         </div>
     `;
 
