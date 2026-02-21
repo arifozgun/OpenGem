@@ -324,6 +324,7 @@ export const firebaseDb: IDatabase = {
             failedRequests: number;
             totalTokensUsed: number;
             isActive: boolean;
+            isPro?: boolean;
         }>;
     }> {
         const accounts = await this.getAllAccounts();
@@ -352,7 +353,8 @@ export const firebaseDb: IDatabase = {
                 successfulRequests: accSuccess,
                 failedRequests: accFailed,
                 totalTokensUsed: accTokens,
-                isActive: acc.isActive
+                isActive: acc.isActive,
+                isPro: acc.isPro
             };
         });
 

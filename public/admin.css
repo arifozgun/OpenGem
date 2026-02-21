@@ -598,6 +598,15 @@ body {
     background: currentColor;
 }
 
+.badge-pro {
+    background: rgba(168, 85, 247, 0.1);
+    color: var(--purple, #a855f7);
+}
+
+.badge-pro::before {
+    display: none;
+}
+
 /* ===== LOG CELLS ===== */
 .cell-truncate {
     max-width: 260px;

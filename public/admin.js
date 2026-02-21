@@ -451,7 +451,12 @@ function renderAccountStats(accountStats) {
 
         const emailTd = document.createElement('td');
         emailTd.className = 'cell-email';
-        emailTd.textContent = acc.email;
+
+        let emailHtml = acc.email;
+        if (acc.isPro) {
+            emailHtml += ' <span class="badge badge-pro" style="margin-left: 6px; font-family: var(--font); cursor: help;" title="Google AI Pro / Advanced Tier">PRO</span>';
+        }
+        emailTd.innerHTML = emailHtml;
 
         const reqTd = document.createElement('td');
         reqTd.textContent = formatNumber(acc.totalRequests);
@@ -522,7 +527,12 @@ function renderAccountsBatch() {
 
         const emailCell = document.createElement('td');
         emailCell.className = 'cell-email';
-        emailCell.textContent = acc.email;
+
+        let emailHtml = acc.email;
+        if (acc.isPro) {
+            emailHtml += ' <span class="badge badge-pro" style="margin-left: 6px; font-family: var(--font); cursor: help;" title="Google AI Pro / Advanced Tier">PRO</span>';
+        }
+        emailCell.innerHTML = emailHtml;
 
         const projectCell = document.createElement('td');
         projectCell.textContent = acc.projectId;

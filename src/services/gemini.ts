@@ -157,3 +157,35 @@ export async function getUserEmail(accessToken: string): Promise<string> {
     const data = await response.json() as any;
     return data.email;
 }
+
+export async function checkAccountTier(accessToken: string): Promise<{ isPro: boolean, tierName: string }> {
+    try {
+        const headers = {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'opengem-intelligence/1.0',
+        };
+        const loadResponse = await nativeFetch(`${CODE_ASSIST_ENDPOINT}/v1internal:loadCodeAssist`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                metadata: {
+                    ideType: 'IDE_UNSPECIFIED',
+                    platform: 'PLATFORM_UNSPECIFIED',
+                    pluginType: 'GEMINI',
+                },
+            }),
+        });
+        if (loadResponse.ok) {
+            const data = await loadResponse.json() as any;
+            const currentTier = data?.currentTier?.id || 'unknown';
+            const paidTier = data?.paidTier?.id;
+            const isPro = paidTier === 'g1-pro-tier' || currentTier === 'premium-tier' || paidTier === 'premium-tier';
+            const tierName = data?.paidTier?.name || data?.currentTier?.name || currentTier;
+            return { isPro, tierName };
+        }
+    } catch (err) {
+        console.error('Failed to check account tier:', err);
+    }
+    return { isPro: false, tierName: 'Unknown' };
+}

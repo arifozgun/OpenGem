@@ -300,6 +300,7 @@ export const localDb: IDatabase = {
                 failedRequests: accFailed,
                 totalTokensUsed: accTokens,
                 isActive: acc.isActive,
+                isPro: acc.isPro,
             };
         });
 

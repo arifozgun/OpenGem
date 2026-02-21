@@ -22,6 +22,8 @@ export interface Account {
     expiresAt: Date | number;
     isActive: boolean;
     lastUsedAt: Date | number;
+    isPro?: boolean;
+    tierName?: string;
     exhaustedAt?: Date | number;
     createdAt?: Date | number;
     updatedAt?: Date | number;
@@ -54,6 +56,7 @@ export interface DbStats {
         failedRequests: number;
         totalTokensUsed: number;
         isActive: boolean;
+        isPro?: boolean;
     }>;
 }
 

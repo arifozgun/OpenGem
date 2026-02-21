@@ -18,6 +18,7 @@ import {
     discoverProjectId,
     getUserEmail,
     refreshAccessToken,
+    checkAccountTier,
     GEMINI_API_BASE,
     DEFAULT_MODEL,
     FALLBACK_MODEL
@@ -279,6 +280,9 @@ app.get('/api/auth/callback', async (req, res) => {
         const email = await getUserEmail(tokens.accessToken);
         const projectId = await discoverProjectId(tokens.accessToken);
 
+        // Check account tier
+        const { isPro, tierName } = await checkAccountTier(tokens.accessToken);
+
         // Upsert into database
         await getDatabase().upsertAccount({
             id: email, // use email as ID
@@ -288,6 +292,8 @@ app.get('/api/auth/callback', async (req, res) => {
             projectId,
             expiresAt: tokens.expiresAt,
             isActive: true,
+            isPro,
+            tierName,
             lastUsedAt: new Date(),
         });
 
@@ -485,6 +491,7 @@ app.post('/api/admin/chat', requireAdmin, (req, res) => {
 });
 
 // --- SPA ROUTING ---
+
 app.get(['/overview', '/accounts', '/keys', '/logs', '/docs', '/chat', '/settings'], (req, res) => {
     res.sendFile(path.join(__dirname, '../public/index.html'));
 });
