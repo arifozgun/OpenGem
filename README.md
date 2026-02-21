@@ -26,6 +26,10 @@ Transform any standard **Google Account** into a free AI API endpoint. OpenGem u
 
 OpenGem is an open-source proxy and API gateway designed to grant developers free, load-balanced access to Google's Gemini models. By operating an intelligent multi-account load balancer, OpenGem seamlessly handles rate limits and quota 429 exhaustions, automatically rotating active Google accounts to ensure uninterrupted service.
 
+<div align="center">
+<img src="public/images/what-is-opengem.png" alt="What is OpenGem" width="800">
+</div>
+
 ## Core Features
 
 | Feature | Description |
@@ -45,7 +49,9 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 | **Flexible Database** | Choose between zero-configuration Firebase Firestore or a completely offline Local JSON database, toggleable on the fly in Settings. |
 
 <div align="center">
-<img src="public/screenshots/what-is-opengem.jpg" alt="OpenGem Dashboard Overview" width="800">
+
+https://github.com/arifozgun/OpenGem/raw/main/public/videos/clinetutorial.mp4
+
 </div>
 
 ---
@@ -76,9 +82,7 @@ Navigate to `http://localhost:3050` in your web browser. The **Setup Wizard** wi
 2. **Admin Account** — Create your dashboard administrator login.
 3. **API Key Generation** — Your first operational API key will be generated instantly.
 
-<div align="center">
-<img src="public/screenshots/opengem-setup-firebase.jpg" alt="OpenGem Setup Wizard" width="800">
-</div>
+
 
 ### Firebase Setup Guide (Optional)
 
@@ -243,15 +247,7 @@ After completing the initial setup, access the administrative panel at `http://l
 
 > **Optimization Tip:** Connect multiple Google accounts to linearly scale your available free quota. Google allocates individual free-tier quotas strictly on a per-account basis.
 
-<div align="center">
-<img src="public/screenshots/opengem-accounts.jpg" alt="OpenGem Accounts Panel" width="800">
-</div>
 
-### Request Logs
-
-<div align="center">
-<img src="public/screenshots/opengem-logs.jpg" alt="OpenGem Request Logs" width="800">
-</div>
 
 ---
 

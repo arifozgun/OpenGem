@@ -731,6 +731,30 @@ print(llm.invoke("Hello!").content)</pre>
                         <div class="db-backend-note" id="dbBackendNote"></div>
                     </div>
                 </div>
+
+                <!-- Privacy Mode Card -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2>Privacy Mode</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <div class="db-status-row">
+                            <div class="db-status-info">
+                                <div class="db-status-label">Email Censoring</div>
+                                <div class="db-status-value" style="font-size: 13px; color: var(--text-secondary);">
+                                    Email adreslerini sansürler. Ekran paylaşımı ve ekran görüntüleri için güvenli.
+                                </div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="privacyToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="privacy-preview" id="privacyPreview">
+                            <code>example@gmail.com</code> → <code>e*****@gmail.com</code>
+                        </div>
+                    </div>
+                </div>
             </section>
         </main>
     </div>

@@ -6,6 +6,29 @@ let accountsBody, accountStatsBody, logsBody, keysBody;
 const pages = {};
 let isDataCached = { stats: false, accounts: false, logs: false, keys: false };
 
+// Privacy mode
+let privacyMode = localStorage.getItem('privacyMode') === 'true';
+
+function censorEmail(email) {
+    if (!email || !privacyMode) return email;
+    const atIndex = email.indexOf('@');
+    if (atIndex <= 0) return email;
+    const local = email.substring(0, atIndex);
+    const domain = email.substring(atIndex);
+    return local[0] + '*'.repeat(Math.max(local.length - 1, 5)) + domain;
+}
+
+function applyPrivacyMode(enabled) {
+    privacyMode = enabled;
+    localStorage.setItem('privacyMode', enabled);
+    const toggle = document.getElementById('privacyToggle');
+    if (toggle) toggle.checked = enabled;
+    // Re-render all tables with new privacy state
+    if (isDataCached.stats) { loadStats(true); }
+    if (accountsAllData.length) { accountsRendered = 0; accountsBody.innerHTML = ''; accountsHasMore = true; renderAccountsBatch(); }
+    if (logsAllData.length) { logsRendered = 0; logsBody.innerHTML = ''; logsHasMore = true; renderLogsBatch(); }
+}
+
 // Lazy loading state
 const LAZY_BATCH_SIZE = 20;
 let logsAllData = [], accountsAllData = [], keysAllData = [];
@@ -175,6 +198,18 @@ async function loadSettings() {
         }
     } catch (e) {
         el.textContent = 'Error loading status';
+    }
+
+    // Privacy toggle
+    const privacyToggle = document.getElementById('privacyToggle');
+    if (privacyToggle) {
+        privacyToggle.checked = privacyMode;
+        if (!privacyToggle._listenerAdded) {
+            privacyToggle._listenerAdded = true;
+            privacyToggle.addEventListener('change', (e) => {
+                applyPrivacyMode(e.target.checked);
+            });
+        }
     }
 }
 
@@ -452,7 +487,7 @@ function renderAccountStats(accountStats) {
         const emailTd = document.createElement('td');
         emailTd.className = 'cell-email';
 
-        let emailHtml = acc.email;
+        let emailHtml = censorEmail(acc.email);
         if (acc.isPro) {
             emailHtml += ' <span class="badge badge-pro" style="margin-left: 6px; font-family: var(--font); cursor: help;" title="Google AI Pro / Advanced Tier">PRO</span>';
         }
@@ -528,7 +563,7 @@ function renderAccountsBatch() {
         const emailCell = document.createElement('td');
         emailCell.className = 'cell-email';
 
-        let emailHtml = acc.email;
+        let emailHtml = censorEmail(acc.email);
         if (acc.isPro) {
             emailHtml += ' <span class="badge badge-pro" style="margin-left: 6px; font-family: var(--font); cursor: help;" title="Google AI Pro / Advanced Tier">PRO</span>';
         }
@@ -657,7 +692,7 @@ function renderLogsBatch() {
         const emailTd = document.createElement('td');
         emailTd.className = 'cell-email';
 
-        let emailHtml = log.accountEmail;
+        let emailHtml = censorEmail(log.accountEmail);
         if (isTask) {
             emailHtml += ' <span class="badge badge-task" style="margin-left: 6px;" title="This request appears to be an automated agent task">Task</span>';
         }
@@ -754,7 +789,7 @@ function showLogDetail(log) {
             </div>
             <div class="log-detail-item">
                 <span class="log-detail-label">Account</span>
-                <span class="log-detail-value" style="font-family:'SF Mono',monospace;font-size:13px;">${log.accountEmail || '—'}</span>
+                <span class="log-detail-value" style="font-family:'SF Mono',monospace;font-size:13px;">${censorEmail(log.accountEmail) || '—'}</span>
             </div>
             <div class="log-detail-item">
                 <span class="log-detail-label">Status</span>
