@@ -31,9 +31,11 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 | Feature | Description |
 |---------|-------------|
 | **Completely Free Access** | Leverages Google's free-tier Gemini API using reverse-engineered credentials. |
-| **Smart Load Balancing** | Automatically rotates across multiple Google accounts when a quota limit (429) is hit. |
+| **Smart Load Balancing** | Automatically rotates across multiple Google accounts when a true quota limit (429) is hit, ignoring temporary rate limits. |
 | **Standardized API** | Native `v1beta` models endpoint compatibility. Works perfectly with `@google/genai` and `google-genai` SDKs. |
-| **Real-time Streaming** | Full support for true Server-Sent Events (SSE) response streaming with automatic account rotation. |
+| **Function Calling** | Full support for native Gemini `tools` and `toolConfig`, enabling AI agents and complex tool architectures. |
+| **Real-time Streaming** | True Server-Sent Events (SSE) response streaming with automatic account rotation and native OpenAI stream compatibility. |
+| **Pro Account Detection**| Automatically detects Google One AI Pro accounts during setup/refresh and assigns a "PRO" badge in the dashboard. |
 | **Dynamic API Keys** | Generate and manage multiple API keys securely from the admin dashboard. |
 | **Usage Dashboard** | Real-time statistics, account performance monitoring, and detailed request log tracking. |
 | **Chat Playground** | Interactive dashboard console to test advanced models natively, adjust system prompts, and visualize thought process streams with Markdown support. |
@@ -43,7 +45,7 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 | **Flexible Database** | Choose between zero-configuration Firebase Firestore or a completely offline Local JSON database, toggleable on the fly in Settings. |
 
 <div align="center">
-<img src="public/screenshots/opengem-overview.jpg" alt="OpenGem Dashboard Overview" width="800">
+<img src="public/screenshots/what-is-opengem.jpg" alt="OpenGem Dashboard Overview" width="800">
 </div>
 
 ---
@@ -115,7 +117,7 @@ Your Application            OpenGem                         Google Gemini API
 
 ### Multi-Account Load Balancing
 
-OpenGem dynamically manages a pool of authenticated Google accounts. Whenever a specific account reaches Google's free-tier quota (resulting in a 429 error), OpenGem immediately disables it and retries the request using the next available account. Exhausted accounts remain on standby and are automatically reactivated after a standard 60-minute cooldown period.
+OpenGem dynamically manages a pool of authenticated Google accounts. Whenever a specific account reaches Google's free-tier quota (resulting in a 429 error), OpenGem intelligently distinguishes between temporary rate limits (RPM bursts) and true quota exhaustion. Accounts hitting simple rate limits are preserved for later retry. If an account is fully exhausted, OpenGem immediately disables it and retries the request using the next available account. Exhausted accounts remain on standby and are automatically reactivated after a standard 60-minute cooldown period.
 
 ### Reverse Engineering Methodology
 
@@ -124,6 +126,8 @@ This project utilizes the identical OAuth credentials deployed by the official [
 ---
 
 ## API Usage Reference
+
+> **Large Payload Support:** The API gateway limit has been increased to `50mb`, allowing for exceptionally large contexts, massive document processing, and complex tool arrays.
 
 ### Endpoint URLs
 
@@ -224,11 +228,11 @@ After completing the initial setup, access the administrative panel at `http://l
 | Dashboard Panel | Capabilities |
 |-----------------|--------------|
 | **Overview** | Analyze total proxy requests, success rates, active account statuses, and system-wide token usage. |
-| **Accounts** | Connect new Google accounts via secure OAuth, monitor their current status, and manually reactivate if necessary. |
+| **Accounts** | Connect new Google accounts via secure OAuth, automatically detect Pro status, monitor current status, and manually reactivate if necessary. |
 | **API Keys** | Issue new API keys, revoke existing ones, and monitor individual key bandwidth utilization. |
 | **Chat** | Interactive playground supporting Gemini 3 Pro thought processes, customizable system instructions, and real-time Markdown streaming. |
 | **Settings** | Toggle between Firebase and Local JSON database solutions on the fly without losing request logs or account data. |
-| **Logs** | Access comprehensive chronological histories detailing requests, generated completions, and associated token calculations. |
+| **Logs** | Access comprehensive chronological histories detailing requests, generated completions, formatted tool calls (`functionCall`/`functionResponse`), and token calculations. |
 
 ### Connecting Google Accounts
 
