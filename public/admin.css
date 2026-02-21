@@ -1860,3 +1860,44 @@ body {
 #page-logs .table tbody tr:hover {
     background: rgba(0, 122, 255, 0.04);
 }
+
+/* ===== LAZY LOADING ===== */
+@keyframes lazyFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.lazy-fade-in {
+    animation: lazyFadeIn 0.3s ease forwards;
+}
+
+.lazy-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+.table-loader {
+    text-align: center;
+    color: var(--text-tertiary);
+    padding: 20px !important;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.lazy-loader-row td {
+    border-bottom: none !important;
+}

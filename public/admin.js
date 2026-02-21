@@ -6,6 +6,12 @@ let accountsBody, accountStatsBody, logsBody, keysBody;
 const pages = {};
 let isDataCached = { stats: false, accounts: false, logs: false, keys: false };
 
+// Lazy loading state
+const LAZY_BATCH_SIZE = 20;
+let logsAllData = [], accountsAllData = [], keysAllData = [];
+let logsRendered = 0, accountsRendered = 0, keysRendered = 0;
+let logsHasMore = false, accountsHasMore = false, keysHasMore = false;
+
 document.addEventListener('DOMContentLoaded', () => {
     loadingView = document.getElementById('loading-view');
     loginView = document.getElementById('login-view');
@@ -85,6 +91,24 @@ document.addEventListener('DOMContentLoaded', () => {
             navigateTo(path, false);
         }
     });
+
+    // Lazy loading scroll listener on main-content
+    const mainContent = document.querySelector('.main-content');
+    if (mainContent) {
+        mainContent.addEventListener('scroll', () => {
+            const { scrollTop, scrollHeight, clientHeight } = mainContent;
+            if (scrollHeight - scrollTop - clientHeight < 150) {
+                // Determine which page is active and load more
+                const activePage = document.querySelector('.page.active');
+                if (activePage) {
+                    const pageId = activePage.id.replace('page-', '');
+                    if (pageId === 'logs' && logsHasMore) renderLogsBatch();
+                    if (pageId === 'accounts' && accountsHasMore) renderAccountsBatch();
+                    if (pageId === 'keys' && keysHasMore) renderKeysBatch();
+                }
+            }
+        });
+    }
 });
 
 // ===== NAVIGATION =====
@@ -463,58 +487,85 @@ async function loadAccounts(force = false) {
         const response = await fetch('/api/accounts');
         if (response.status === 401) { showLogin(); return; }
 
-        const accounts = await response.json();
+        accountsAllData = await response.json();
         isDataCached.accounts = true;
+        accountsRendered = 0;
         accountsBody.innerHTML = '';
 
-        if (accounts.length === 0) {
+        if (accountsAllData.length === 0) {
             accountsBody.innerHTML = '<tr><td colspan="5" class="table-empty">No accounts connected yet.</td></tr>';
+            accountsHasMore = false;
             return;
         }
 
-        accounts.forEach(acc => {
-            const row = document.createElement('tr');
-
-            const emailCell = document.createElement('td');
-            emailCell.className = 'cell-email';
-            emailCell.textContent = acc.email;
-
-            const projectCell = document.createElement('td');
-            projectCell.textContent = acc.projectId;
-            projectCell.style.color = 'var(--text-secondary)';
-
-            const statusCell = document.createElement('td');
-            const badge = document.createElement('span');
-            badge.className = acc.isActive ? 'badge badge-active' : 'badge badge-inactive';
-            badge.textContent = acc.isActive ? 'Active' : 'Exhausted';
-            statusCell.appendChild(badge);
-
-            const timeCell = document.createElement('td');
-            timeCell.className = 'cell-time';
-            timeCell.textContent = formatTime(acc.lastUsedAt);
-
-            const actionCell = document.createElement('td');
-
-            if (!acc.isActive) {
-                const reactivateBtn = document.createElement('button');
-                reactivateBtn.className = 'btn btn-link';
-                reactivateBtn.textContent = 'Reactivate';
-                reactivateBtn.onclick = () => reactivateAccount(acc.id);
-                actionCell.appendChild(reactivateBtn);
-            }
-
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'btn btn-danger-text';
-            deleteBtn.textContent = 'Remove';
-            deleteBtn.onclick = () => deleteAccount(acc.id);
-            actionCell.appendChild(deleteBtn);
-
-            row.append(emailCell, projectCell, statusCell, timeCell, actionCell);
-            accountsBody.appendChild(row);
-        });
+        accountsHasMore = true;
+        renderAccountsBatch();
     } catch (e) {
         console.error(e);
         accountsBody.innerHTML = '<tr><td colspan="5" class="table-empty" style="color:var(--red)">Failed to load accounts.</td></tr>';
+    }
+}
+
+function renderAccountsBatch() {
+    if (!accountsHasMore) return;
+    const start = accountsRendered;
+    const end = Math.min(start + LAZY_BATCH_SIZE, accountsAllData.length);
+
+    // Remove existing loader row
+    const existingLoader = accountsBody.querySelector('.lazy-loader-row');
+    if (existingLoader) existingLoader.remove();
+
+    for (let i = start; i < end; i++) {
+        const acc = accountsAllData[i];
+        const row = document.createElement('tr');
+        row.className = 'lazy-fade-in';
+
+        const emailCell = document.createElement('td');
+        emailCell.className = 'cell-email';
+        emailCell.textContent = acc.email;
+
+        const projectCell = document.createElement('td');
+        projectCell.textContent = acc.projectId;
+        projectCell.style.color = 'var(--text-secondary)';
+
+        const statusCell = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.className = acc.isActive ? 'badge badge-active' : 'badge badge-inactive';
+        badge.textContent = acc.isActive ? 'Active' : 'Exhausted';
+        statusCell.appendChild(badge);
+
+        const timeCell = document.createElement('td');
+        timeCell.className = 'cell-time';
+        timeCell.textContent = formatTime(acc.lastUsedAt);
+
+        const actionCell = document.createElement('td');
+
+        if (!acc.isActive) {
+            const reactivateBtn = document.createElement('button');
+            reactivateBtn.className = 'btn btn-link';
+            reactivateBtn.textContent = 'Reactivate';
+            reactivateBtn.onclick = () => reactivateAccount(acc.id);
+            actionCell.appendChild(reactivateBtn);
+        }
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-danger-text';
+        deleteBtn.textContent = 'Remove';
+        deleteBtn.onclick = () => deleteAccount(acc.id);
+        actionCell.appendChild(deleteBtn);
+
+        row.append(emailCell, projectCell, statusCell, timeCell, actionCell);
+        accountsBody.appendChild(row);
+    }
+
+    accountsRendered = end;
+    accountsHasMore = accountsRendered < accountsAllData.length;
+
+    if (accountsHasMore) {
+        const loaderRow = document.createElement('tr');
+        loaderRow.className = 'lazy-loader-row';
+        loaderRow.innerHTML = '<td colspan="5" class="table-loader"><div class="lazy-spinner"></div> Loading more...</td>';
+        accountsBody.appendChild(loaderRow);
     }
 }
 
@@ -547,62 +598,89 @@ async function loadLogs(force = false) {
     if (!force && isDataCached.logs) return;
     logsBody.innerHTML = '<tr><td colspan="5" class="table-empty">Loading logs...</td></tr>';
     try {
-        const res = await fetch('/api/logs?limit=100');
+        const res = await fetch('/api/logs?limit=500');
         if (res.status === 401) { showLogin(); return; }
-        const logs = await res.json();
+        logsAllData = await res.json();
         isDataCached.logs = true;
+        logsRendered = 0;
         logsBody.innerHTML = '';
 
-        if (logs.length === 0) {
+        if (logsAllData.length === 0) {
             logsBody.innerHTML = '<tr><td colspan="5" class="table-empty">No request logs yet. Logs will appear after API requests are made.</td></tr>';
+            logsHasMore = false;
             return;
         }
 
-        logs.forEach(log => {
-            const row = document.createElement('tr');
-
-            const timeTd = document.createElement('td');
-            timeTd.className = 'cell-time';
-            timeTd.textContent = formatTime(log.timestamp);
-
-            const emailTd = document.createElement('td');
-            emailTd.className = 'cell-email';
-            emailTd.textContent = log.accountEmail;
-
-            const questionTd = document.createElement('td');
-            questionTd.className = 'cell-truncate';
-            questionTd.textContent = log.question || '—';
-            questionTd.title = log.question || '';
-
-            const answerTd = document.createElement('td');
-            answerTd.className = 'cell-truncate';
-
-            if (!log.success) {
-                const errorSpan = document.createElement('span');
-                errorSpan.className = 'badge badge-inactive';
-                errorSpan.style.backgroundColor = 'var(--red-light, rgba(239, 68, 68, 0.1))';
-                errorSpan.style.color = 'var(--red, #ef4444)';
-                errorSpan.textContent = 'Error';
-
-                const errText = document.createTextNode(' ' + (log.answer || '—'));
-                answerTd.appendChild(errorSpan);
-                answerTd.appendChild(errText);
-                answerTd.title = log.answer || '';
-            } else {
-                answerTd.textContent = log.answer || '—';
-                answerTd.title = log.answer || '';
-            }
-
-            const tokensTd = document.createElement('td');
-            tokensTd.textContent = formatNumber(log.tokensUsed || 0);
-
-            row.append(timeTd, emailTd, questionTd, answerTd, tokensTd);
-            row.addEventListener('click', () => showLogDetail(log));
-            logsBody.appendChild(row);
-        });
+        logsHasMore = true;
+        renderLogsBatch();
     } catch (e) {
         console.error('Failed to load logs:', e);
         logsBody.innerHTML = '<tr><td colspan="5" class="table-empty" style="color:var(--red)">Failed to load logs.</td></tr>';
+    }
+}
+
+function renderLogsBatch() {
+    if (!logsHasMore) return;
+    const start = logsRendered;
+    const end = Math.min(start + LAZY_BATCH_SIZE, logsAllData.length);
+
+    // Remove existing loader row
+    const existingLoader = logsBody.querySelector('.lazy-loader-row');
+    if (existingLoader) existingLoader.remove();
+
+    for (let i = start; i < end; i++) {
+        const log = logsAllData[i];
+        const row = document.createElement('tr');
+        row.className = 'lazy-fade-in';
+
+        const timeTd = document.createElement('td');
+        timeTd.className = 'cell-time';
+        timeTd.textContent = formatTime(log.timestamp);
+
+        const emailTd = document.createElement('td');
+        emailTd.className = 'cell-email';
+        emailTd.textContent = log.accountEmail;
+
+        const questionTd = document.createElement('td');
+        questionTd.className = 'cell-truncate';
+        questionTd.textContent = log.question || '—';
+        questionTd.title = log.question || '';
+
+        const answerTd = document.createElement('td');
+        answerTd.className = 'cell-truncate';
+
+        if (!log.success) {
+            const errorSpan = document.createElement('span');
+            errorSpan.className = 'badge badge-inactive';
+            errorSpan.style.backgroundColor = 'var(--red-light, rgba(239, 68, 68, 0.1))';
+            errorSpan.style.color = 'var(--red, #ef4444)';
+            errorSpan.textContent = 'Error';
+
+            const errText = document.createTextNode(' ' + (log.answer || '—'));
+            answerTd.appendChild(errorSpan);
+            answerTd.appendChild(errText);
+            answerTd.title = log.answer || '';
+        } else {
+            answerTd.textContent = log.answer || '—';
+            answerTd.title = log.answer || '';
+        }
+
+        const tokensTd = document.createElement('td');
+        tokensTd.textContent = formatNumber(log.tokensUsed || 0);
+
+        row.append(timeTd, emailTd, questionTd, answerTd, tokensTd);
+        row.addEventListener('click', () => showLogDetail(log));
+        logsBody.appendChild(row);
+    }
+
+    logsRendered = end;
+    logsHasMore = logsRendered < logsAllData.length;
+
+    if (logsHasMore) {
+        const loaderRow = document.createElement('tr');
+        loaderRow.className = 'lazy-loader-row';
+        loaderRow.innerHTML = '<td colspan="5" class="table-loader"><div class="lazy-spinner"></div> Loading more...</td>';
+        logsBody.appendChild(loaderRow);
     }
 }
 
@@ -687,48 +765,75 @@ async function loadApiKeys(force = false) {
     try {
         const res = await fetch('/api/keys');
         if (res.status === 401) { showLogin(); return; }
-        const keys = await res.json();
+        keysAllData = await res.json();
         isDataCached.keys = true;
+        keysRendered = 0;
         keysBody.innerHTML = '';
 
-        if (keys.length === 0) {
+        if (keysAllData.length === 0) {
             keysBody.innerHTML = '<tr><td colspan="5" class="table-empty">No API keys yet. Create one to get started.</td></tr>';
+            keysHasMore = false;
             return;
         }
 
-        keys.forEach(k => {
-            const row = document.createElement('tr');
-
-            const nameTd = document.createElement('td');
-            nameTd.textContent = k.name;
-            nameTd.style.fontWeight = '500';
-
-            const keyTd = document.createElement('td');
-            keyTd.style.fontFamily = "'SF Mono', monospace";
-            keyTd.style.fontSize = '13px';
-            keyTd.style.color = 'var(--text-secondary)';
-            keyTd.textContent = k.key;
-
-            const createdTd = document.createElement('td');
-            createdTd.className = 'cell-time';
-            createdTd.textContent = formatTime(k.createdAt);
-
-            const reqTd = document.createElement('td');
-            reqTd.textContent = formatNumber(k.totalRequests || 0);
-
-            const actionTd = document.createElement('td');
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'btn btn-danger-text';
-            deleteBtn.textContent = 'Delete';
-            deleteBtn.onclick = () => deleteApiKey(k.id, k.name);
-            actionTd.appendChild(deleteBtn);
-
-            row.append(nameTd, keyTd, createdTd, reqTd, actionTd);
-            keysBody.appendChild(row);
-        });
+        keysHasMore = true;
+        renderKeysBatch();
     } catch (e) {
         console.error('Failed to load keys:', e);
         keysBody.innerHTML = '<tr><td colspan="5" class="table-empty" style="color:var(--red)">Failed to load API keys.</td></tr>';
+    }
+}
+
+function renderKeysBatch() {
+    if (!keysHasMore) return;
+    const start = keysRendered;
+    const end = Math.min(start + LAZY_BATCH_SIZE, keysAllData.length);
+
+    // Remove existing loader row
+    const existingLoader = keysBody.querySelector('.lazy-loader-row');
+    if (existingLoader) existingLoader.remove();
+
+    for (let i = start; i < end; i++) {
+        const k = keysAllData[i];
+        const row = document.createElement('tr');
+        row.className = 'lazy-fade-in';
+
+        const nameTd = document.createElement('td');
+        nameTd.textContent = k.name;
+        nameTd.style.fontWeight = '500';
+
+        const keyTd = document.createElement('td');
+        keyTd.style.fontFamily = "'SF Mono', monospace";
+        keyTd.style.fontSize = '13px';
+        keyTd.style.color = 'var(--text-secondary)';
+        keyTd.textContent = k.key;
+
+        const createdTd = document.createElement('td');
+        createdTd.className = 'cell-time';
+        createdTd.textContent = formatTime(k.createdAt);
+
+        const reqTd = document.createElement('td');
+        reqTd.textContent = formatNumber(k.totalRequests || 0);
+
+        const actionTd = document.createElement('td');
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-danger-text';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.onclick = () => deleteApiKey(k.id, k.name);
+        actionTd.appendChild(deleteBtn);
+
+        row.append(nameTd, keyTd, createdTd, reqTd, actionTd);
+        keysBody.appendChild(row);
+    }
+
+    keysRendered = end;
+    keysHasMore = keysRendered < keysAllData.length;
+
+    if (keysHasMore) {
+        const loaderRow = document.createElement('tr');
+        loaderRow.className = 'lazy-loader-row';
+        loaderRow.innerHTML = '<td colspan="5" class="table-loader"><div class="lazy-spinner"></div> Loading more...</td>';
+        keysBody.appendChild(loaderRow);
     }
 }
 
