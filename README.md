@@ -27,7 +27,7 @@ Transform any standard **Google Account** into a free AI API endpoint. OpenGem u
 OpenGem is an open-source proxy and API gateway designed to grant developers free, load-balanced access to Google's Gemini models. By operating an intelligent multi-account load balancer, OpenGem seamlessly handles rate limits and quota 429 exhaustions, automatically rotating active Google accounts to ensure uninterrupted service.
 
 <div align="center">
-<img src="public/images/what-is-opengem.png" alt="What is OpenGem" width="800">
+<img src="public/images/what-is-opengem.jpg" alt="What is OpenGem" width="800">
 </div>
 
 ## Core Features
@@ -50,7 +50,7 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 
 <div align="center">
 
-https://github.com/arifozgun/OpenGem/raw/main/public/videos/clinetutorial.mp4
+https://github.com/user-attachments/assets/40051423-328d-412c-a1ac-066c343207df
 
 </div>
 
