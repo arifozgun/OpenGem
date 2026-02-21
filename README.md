@@ -5,7 +5,7 @@
   <img alt="OpenGem Logo" src="public/logos/black.png" height="120">
 </picture>
 
-# OpenGem 0.1.3
+# OpenGem 0.1.4
 
 **Free, Open-Source AI API Gateway for Gemini Models**
 

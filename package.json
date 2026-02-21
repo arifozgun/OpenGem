@@ -1,6 +1,6 @@
 {
   "name": "opengem",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Free, open-source AI API gateway for Gemini models — educational and research use",
   "main": "app.js",
   "scripts": {
