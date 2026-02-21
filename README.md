@@ -99,24 +99,26 @@ Navigate to `http://localhost:3050` in your web browser. The **Setup Wizard** wi
 
 ## How It Works
 
-```text
-Your Application            OpenGem                         Google Gemini API
-      │                        │                                   │
-      │  POST /v1beta/...      │                                   │
-      │                        │                                   │
-      │───────────────────────►│                                   │
-      │                        │  Select least-used account        │
-      │                        │  Refresh token if necessary       │
-      │                        │──────────────────────────────────►│
-      │                        │                                   │
-      │                        │  Gemini API Response              │
-      │                        │◄──────────────────────────────────│
-      │                        │  (Streams SSE if requested)       │
-      │                        │                                   │
-      │                        │  If 429 → try next account pool   │
-      │                        │  Log usage stats to database      │
-      │  JSON / SSE response   │                                   │
-      │◄───────────────────────│                                   │
+```mermaid
+sequenceDiagram
+    participant App as Your Application
+    participant OG as OpenGem
+    participant API as Google Gemini API
+
+    App->>OG: POST /v1beta/models/{model}
+    OG->>OG: Select least-used account
+    OG->>OG: Refresh token if necessary
+    OG->>API: Forward request
+    API-->>OG: Gemini API Response
+    OG->>OG: Log usage stats to database
+
+    alt 429 Quota Exhausted
+        OG->>OG: Rotate to next account
+        OG->>API: Retry with new account
+        API-->>OG: Gemini API Response
+    end
+
+    OG-->>App: JSON / SSE Response
 ```
 
 ### Multi-Account Load Balancing
