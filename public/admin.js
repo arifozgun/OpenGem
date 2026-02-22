@@ -682,6 +682,8 @@ function renderLogsBatch() {
             log.question.includes('[TASK RESUMPTION]') ||
             log.question.includes('<task>') ||
             log.question.includes('toolConfig') ||
+            log.question.includes('<environment_details>') ||
+            log.question.includes('[Tool Response:') ||
             (log.question === 'Unknown' && log.answer && log.answer.includes('**'))
         );
 
@@ -725,8 +727,16 @@ function renderLogsBatch() {
             answerTd.appendChild(errText);
             answerTd.title = log.answer || '';
         } else {
-            answerTd.textContent = log.answer || '—';
-            answerTd.title = log.answer || '';
+            // For the table preview, try to extract the non-thinking part if possible
+            let previewText = log.answer || '—';
+            if (previewText.includes('\\n\\n')) {
+                const parts = previewText.split('\\n\\n');
+                if (parts.length > 1) {
+                    previewText = parts[parts.length - 1]; // usually the last part is the actual answer
+                }
+            }
+            answerTd.textContent = previewText;
+            answerTd.title = previewText;
         }
 
         const tokensTd = document.createElement('td');
@@ -771,6 +781,8 @@ function showLogDetail(log) {
         log.question.includes('[TASK RESUMPTION]') ||
         log.question.includes('<task>') ||
         log.question.includes('toolConfig') ||
+        log.question.includes('<environment_details>') ||
+        log.question.includes('[Tool Response:') ||
         (log.question === 'Unknown' && log.answer && log.answer.includes('**'))
     );
 
@@ -806,11 +818,43 @@ function showLogDetail(log) {
         </div>
         <div class="log-detail-section">
             <div class="log-detail-section-title">Answer</div>
-            <div class="log-detail-text">${renderText(log.answer)}</div>
+            <div class="log-detail-text">${renderAnswerText(log.answer)}</div>
         </div>
     `;
 
     modal.classList.remove('hidden');
+}
+
+function renderAnswerText(text) {
+    if (!text) return '—';
+    const escaped = escapeHtml(text);
+
+    // Check if the text matches the typical agent thinking format: **Thinking** ... **Answer** ...
+    // Note: This relies on the new models putting reasoning in the first part and answer in the second part
+    // The parts map creates a newline separation
+    if (escaped.includes('\\n\\n') && escaped.includes('**')) {
+        // Try to identify thinking blocks
+        const parts = escaped.split('\\n\\n');
+        if (parts.length > 1) {
+            let html = '';
+            for (let i = 0; i < parts.length; i++) {
+                if (i === 0 && parts[0].includes('**')) { // usually first part is reasoning
+                    html += `<details class="log-thinking-block"><summary style="cursor:pointer; color:var(--text-secondary); font-size:12px; margin-bottom: 8px;">View Thinking Process</summary><div style="opacity:0.8; font-size:0.9em; margin-bottom: 12px; padding-left: 8px; border-left: 2px solid var(--border);">${parts[i]}</div></details>`;
+                } else {
+                    html += `<div>${parts[i]}</div>`;
+                }
+            }
+            return html;
+        }
+    }
+
+    // General fallback for agent tasks
+    if (text.includes('**') && text.length > 500) { // arbitrary length for typical agent output
+        // Do not render bold text per user request
+        return escaped;
+    }
+
+    return escaped;
 }
 
 function escapeHtml(text) {

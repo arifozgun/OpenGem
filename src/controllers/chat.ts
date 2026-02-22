@@ -130,7 +130,11 @@ export async function tryGenerateContentWithAccounts(model: string, contents: an
                     if (fallbackResponse.ok) {
                         const data = await fallbackResponse.json() as any;
                         const candidate = data.response?.candidates?.[0];
-                        const content = candidate?.content?.parts?.[0]?.text;
+                        const content = candidate?.content?.parts?.map((p: any) => {
+                            if (p.text) return p.text;
+                            if (p.functionCall) return `[Tool Call: ${p.functionCall.name}]\n${JSON.stringify(p.functionCall.args, null, 2)}`;
+                            return '';
+                        }).filter(Boolean).join('\n\n').trim();
                         const tokenUsage = data.usageMetadata?.totalTokenCount || data.response?.usageMetadata?.totalTokenCount || 0;
                         if (content) {
                             await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: tokenUsage });
@@ -170,7 +174,11 @@ export async function tryGenerateContentWithAccounts(model: string, contents: an
 
             const data = await response.json() as any;
             const candidate = data.response?.candidates?.[0];
-            const content = candidate?.content?.parts?.[0]?.text;
+            const content = candidate?.content?.parts?.map((p: any) => {
+                if (p.text) return p.text;
+                if (p.functionCall) return `[Tool Call: ${p.functionCall.name}]\n${JSON.stringify(p.functionCall.args, null, 2)}`;
+                return '';
+            }).filter(Boolean).join('\n\n').trim();
             const tokenUsage = data.usageMetadata?.totalTokenCount || data.response?.usageMetadata?.totalTokenCount || 0;
 
             if (content) {
@@ -284,6 +292,8 @@ async function handleStreamGenerateContent(req: Request, res: Response, model: s
                                 for (const part of parts) {
                                     if (part.text) {
                                         fullAnswer += part.text;
+                                    } else if (part.functionCall) {
+                                        fullAnswer += `\n\n[Tool Call: ${part.functionCall.name}]\n${JSON.stringify(part.functionCall.args, null, 2)}\n\n`;
                                     }
                                 }
                             }
@@ -444,6 +454,8 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
                                     for (const part of parts) {
                                         if (part.text) {
                                             fullAnswer += part.text;
+                                        } else if (part.functionCall) {
+                                            fullAnswer += `\n\n[Tool Call: ${part.functionCall.name}]\n${JSON.stringify(part.functionCall.args, null, 2)}\n\n`;
                                         }
                                     }
                                 }

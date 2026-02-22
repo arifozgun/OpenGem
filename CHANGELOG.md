@@ -5,12 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-02-23
+
+### Fixed
+- Added `<environment_details>` and `[Tool Response:` as indicators for Automated Agent Tasks in the dashboard request logs.
+- Fixed issue where agent task outputs utilizing `functionCall` responses (such as `attempt_completion`) were incorrectly omitted from request logs.
+- Removed unintentional bold formatting from text output in the Admin Dashboard logs preview to render raw unformatted Agent outputs accurately.
+- Updated `src/controllers/chat.ts` and `public/admin.js` to seamlessly display multi-part AI reasoning sequences and execution outcomes.
+
+### Changed
+- Incremented package version to `0.1.8`.
+
 ## [0.1.7] - 2026-02-21
 
 ### Added
-- Tools support (`tools`, `toolConfig`, `tool_config`) added to Gemini API payload construction.
-- Request detail logs now properly format tool calls (`functionCall` and `functionResponse`) within the question text.
-- Modified JSON body payload limit in Express to support huge payloads up to `50mb`.
+- Tools support (\`tools\`, \`toolConfig\`, \`tool_config\`) added to Gemini API payload construction.
+- Request detail logs now properly format tool calls (\`functionCall\` and \`functionResponse\`) within the question text.
+- Modified JSON body payload limit in Express to support huge payloads up to \`50mb\`.
 
 ### Fixed
 - Fixed SSE stream response formatting to unwrap native Gemini payload structure when streaming so standard OpenAI compatibility is retained.
