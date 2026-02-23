@@ -812,6 +812,12 @@ function showLogDetail(log) {
                 <span class="log-detail-value">${formatNumber(log.tokensUsed || 0)}</span>
             </div>
         </div>
+        ${log.systemInstruction ? `
+        <div style="background: var(--bg-card, rgba(139,92,246,0.06)); border: 1px solid var(--accent, #8b5cf6); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px;">
+            <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent, #8b5cf6); margin-bottom: 8px;">⚙️ System Prompt</div>
+            <div class="log-detail-text" style="font-size: 13px; line-height: 1.6; opacity: 0.92; white-space: pre-wrap; word-break: break-word;">${renderText(log.systemInstruction)}</div>
+        </div>
+        ` : ''}
         <div class="log-detail-section">
             <div class="log-detail-section-title">Question</div>
             <div class="log-detail-text">${renderText(log.question)}</div>

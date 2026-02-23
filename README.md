@@ -5,11 +5,11 @@
   <img alt="OpenGem Logo" src="public/logos/black.png" height="120">
 </picture>
 
-# OpenGem 0.1.8
+# OpenGem 0.2.0
 
 **Free, Open-Source AI API Gateway for Gemini Models**
 
-[![Version](https://img.shields.io/badge/Version-0.1.8-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
+[![Version](https://img.shields.io/badge/Version-0.2.0-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://typescriptlang.org)
@@ -35,17 +35,17 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 | Feature | Description |
 |---------|-------------|
 | **Completely Free Access** | Leverages Google's free-tier Gemini API using reverse-engineered credentials. |
-| **Smart Load Balancing** | Automatically rotates across multiple Google accounts when a true quota limit (429) is hit, ignoring temporary rate limits. |
+| **Smart Load Balancing** | Automatically rotates across multiple Google accounts with exponential backoff, jitter, client-side rate limiting, and concurrency control. |
 | **Standardized API** | Native `v1beta` models endpoint compatibility. Works perfectly with `@google/genai` and `google-genai` SDKs. |
 | **Function Calling** | Full support for native Gemini `tools` and `toolConfig`, enabling AI agents and complex tool architectures. |
-| **Real-time Streaming** | True Server-Sent Events (SSE) response streaming with automatic account rotation and native OpenAI stream compatibility. |
+| **Real-time Streaming** | True Server-Sent Events (SSE) response streaming with automatic account rotation and model fallback (Flash → Pro). |
 | **Pro Account Detection**| Automatically detects Google One AI Pro accounts during setup/refresh and assigns a "PRO" badge in the dashboard. |
 | **Dynamic API Keys** | Generate and manage multiple API keys securely from the admin dashboard. |
 | **Usage Dashboard** | Real-time statistics, account performance monitoring, and detailed request log tracking. |
 | **Chat Playground** | Interactive dashboard console to test advanced models natively, adjust system prompts, and visualize thought process streams with Markdown support. |
 | **One-Click Setup** | Intuitive, browser-based setup wizard requiring no manual configuration files. |
 | **Secure by Default** | Built with JWT authentication, rate limiting, and Helmet.js security headers. |
-| **Auto Recovery** | Exhausted Google accounts auto-reactivate seamlessly after a 60-minute cooldown period. |
+| **Intelligent Self-Healing** | Accounts never permanently exhaust. Rate limits trigger escalating cooldowns (15s→120s) with automatic probe recovery, inspired by openclaw’s architecture. |
 | **Flexible Database** | Choose between zero-configuration Firebase Firestore or a completely offline Local JSON database, toggleable on the fly in Settings. |
 
 <div align="center">
@@ -123,7 +123,7 @@ sequenceDiagram
 
 ### Multi-Account Load Balancing
 
-OpenGem dynamically manages a pool of authenticated Google accounts. Whenever a specific account reaches Google's free-tier quota (resulting in a 429 error), OpenGem intelligently distinguishes between temporary rate limits (RPM bursts) and true quota exhaustion. Accounts hitting simple rate limits are preserved for later retry. If an account is fully exhausted, OpenGem immediately disables it and retries the request using the next available account. Exhausted accounts remain on standby and are automatically reactivated after a standard 60-minute cooldown period.
+OpenGem dynamically manages a pool of authenticated Google accounts with a multi-layered stability system inspired by [openclaw](https://github.com/mariozechner/openclaw). When a 429 error occurs, the system classifies it (rate limit vs. quota exhaustion) and applies the appropriate strategy: temporary cooldowns with escalating durations and automatic probe recovery — accounts are **never** permanently deactivated. Concurrent API requests are throttled via a semaphore (max 3), inter-account delays prevent IP-level rate limiting, and exponential backoff with jitter eliminates thundering herd problems.
 
 ### Reverse Engineering Methodology
 
@@ -306,7 +306,12 @@ opengem/
 │       ├── firebase.ts  # Integrated Firestore schema operations
 │       ├── gemini.ts    # Standardized Gemini API & OAuth connectors
 │       ├── http.ts      # Native resilient HTTP client integration
-│       └── localDb.ts   # Local JSON file database backend
+│       ├── localDb.ts   # Local JSON file database backend
+│       ├── retry.ts     # Exponential backoff with jitter retry utility
+│       ├── rate-limiter.ts      # Per-account client-side rate limiter
+│       ├── error-classifier.ts  # 8-category error classification system
+│       ├── account-cooldown.ts  # Account cooldown with probe recovery
+│       └── concurrency.ts      # Request concurrency semaphore limiter
 ├── .env.example         # Template environment variables
 ├── .htaccess            # Production file access restrictions
 ├── app.js               # Production entry point

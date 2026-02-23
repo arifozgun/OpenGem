@@ -8,6 +8,7 @@ export interface RequestLog {
     accountEmail: string;
     question: string;
     answer: string;
+    systemInstruction?: string;
     tokensUsed: number;
     success: boolean;
     timestamp: Date | number;
