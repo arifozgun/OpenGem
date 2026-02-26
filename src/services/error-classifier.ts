@@ -28,18 +28,25 @@ type ErrorPattern = RegExp | string;
 
 // Comprehensive error patterns from openclaw
 const ERROR_PATTERNS = {
+    // Short-lived throttles — recover in seconds/minutes
     rateLimit: [
         /rate[_ ]limit|too many requests|429/i,
         'exceeded your current quota',
         'usage limit',
-    ] as ErrorPattern[],
-
-    quota: [
+        // Google Code Assist returns RESOURCE_EXHAUSTED for RPM throttling, NOT daily quota exhaustion.
+        // These recover within seconds/minutes — do NOT put in the 1-hour quota bucket.
         'resource has been exhausted',
         'resource_exhausted',
+        'RESOURCE_EXHAUSTED',
+    ] as ErrorPattern[],
+
+    // True daily/monthly quota exhaustion — longer recovery needed
+    quota: [
         'quota exceeded',
         'quota_exceeded',
         'insufficient_quota',
+        'daily limit exceeded',
+        'monthly limit exceeded',
     ] as ErrorPattern[],
 
     overloaded: [

@@ -23,6 +23,7 @@ import {
     DEFAULT_MODEL,
     FALLBACK_MODEL
 } from './services/gemini';
+import { warmAccountCache, invalidateAccountCache } from './services/account-manager';
 
 dotenv.config();
 
@@ -297,6 +298,7 @@ app.get('/api/auth/callback', async (req, res) => {
             tierName,
             lastUsedAt: new Date(),
         });
+        invalidateAccountCache(); // Newly added account should be available immediately
 
         res.redirect('/');
     } catch (err: any) {
@@ -315,11 +317,13 @@ app.get('/api/accounts', requireAdmin, async (req, res) => {
 
 app.put('/api/accounts/:id/reactivate', requireAdmin, async (req, res) => {
     await getDatabase().reactivateAccount(String(req.params.id));
+    invalidateAccountCache(); // Sync in-memory account list
     res.json({ success: true });
 });
 
 app.delete('/api/accounts/:id', requireAdmin, async (req, res) => {
     await getDatabase().deleteAccount(String(req.params.id));
+    invalidateAccountCache(); // Sync in-memory account list
     res.json({ success: true });
 });
 
@@ -507,13 +511,15 @@ app.post('/v1beta/models/:model\\::action', apiLimiter, requireApiKey, (req, res
 const PORT = process.env.PORT || 3050;
 const EXHAUSTION_COOLDOWN_MS = 60 * 60 * 1000; // 60 minutes
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`🚀 OpenGem running on http://localhost:${PORT}`);
 
     if (!isConfigured()) {
         console.log(`⚙️  Setup required! Visit http://localhost:${PORT}/setup to configure.`);
     } else {
         console.log(`✅ System configured and ready.`);
+        // Warm the in-memory account cache so the first request is instant
+        warmAccountCache().catch(err => console.error('Account cache warm failed:', err));
     }
 
     // Background job: auto-reactivate exhausted accounts every 5 minutes
@@ -523,6 +529,7 @@ app.listen(PORT, () => {
             const count = await getDatabase().reactivateExhaustedAccounts(EXHAUSTION_COOLDOWN_MS);
             if (count > 0) {
                 console.log(`♻️ Background job: reactivated ${count} exhausted account(s).`);
+                invalidateAccountCache(); // Refresh cache after reactivations
             }
         } catch (err) {
             console.error('❌ Background reactivation check failed:', err);

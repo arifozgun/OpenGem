@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-02-26
+
+### Added
+- **Third Model Fallback** — Added `gemini-3.1-pro-preview` as the third fallback model step in the rotation chain (`flash` → `pro` → `pro-3.1`). (`src/services/gemini.ts`)
+
+### Fixed
+- **Input Stream Termination** — Resolved the `Network error: Error in input stream` issue by automatically appending `data: [DONE]\n\n` prior to closing the HTTP response in SSE streaming.
+- **Frontend Fetch Error** — Fixed a mid-stream `NetworkError` on the frontend by stopping any further account rotation attempts if SSE headers have already been sent to the client.
+- **False Quota Exhaustion** — Fixed a misclassification bug where `resource_exhausted` errors from the Code Assist API were incorrectly handled as a 1-hour quota exhaustion instead of a brief `rate_limit` (RPM burst). (`src/services/error-classifier.ts`)
+
+### Changed
+- **In-Memory Caching** — Refactored the local database handler (`localDb.ts`) to use an in-memory cache for drastically faster and smoother account switching.
+- **Reduced API Concurrency** — Concurrently active Gemini API requests lowered from 8 to 3 to prevent overwhelming Google servers and triggering bulk closures.
+- **Improved Rotation Staggering** — Implemented a 150ms stagger between rotational account fallback attempts to mitigate Google's burst IP throttling.
+- **Chat Controller Optimization** — Streamlined the entire account switching flow in the backend controller by removing redundant delays and duplicate loops.
+- Incremented package version to `0.2.1`.
+
 ## [0.2.0] - 2026-02-23
 
 ### Added

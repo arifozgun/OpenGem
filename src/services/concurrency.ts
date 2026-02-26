@@ -97,6 +97,7 @@ class RequestSemaphore {
     }
 }
 
-// Global semaphore: max 3 concurrent Gemini API requests per process
-// This prevents thundering herd when multiple accounts try simultaneously
+// Global semaphore: max 3 concurrent Gemini API requests per process.
+// Prevents IP-level throttling — same server IP used for all accounts,
+// so keeping total concurrent outbound requests low is critical.
 export const geminiRequestSemaphore = new RequestSemaphore(3);

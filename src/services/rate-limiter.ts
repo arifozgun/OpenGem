@@ -61,8 +61,10 @@ export function createRateLimiter(params: {
     };
 }
 
-// Per-account rate limiter: max 10 requests per 60 seconds per account
+// Per-account rate limiter: 60 requests per 60 seconds per account.
+// The previous 10 req/min limit was too conservative for a server-side proxy
+// and caused unnecessary local throttling before the API even had a chance to respond.
 export const accountRateLimiter = createRateLimiter({
-    maxRequests: 10,
+    maxRequests: 60,
     windowMs: 60_000,
 });

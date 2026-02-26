@@ -9,8 +9,9 @@ export const GEMINI_CLI_CREDENTIALS = {
 
 const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 export const GEMINI_API_BASE = `${CODE_ASSIST_ENDPOINT}/v1internal`;
-export const DEFAULT_MODEL = 'gemini-3-flash-preview';
-export const FALLBACK_MODEL = 'gemini-3-pro-preview';
+export const DEFAULT_MODEL = 'gemini-3-flash-preview';      // Primary model
+export const FALLBACK_MODEL = 'gemini-3-pro-preview';        // First fallback (on 429)
+export const FALLBACK_MODEL_V2 = 'gemini-3.1-pro-preview';  // Second fallback (if pro also 429)
 
 export const OAUTH_CONFIG = {
     clientId: GEMINI_CLI_CREDENTIALS.clientId,
