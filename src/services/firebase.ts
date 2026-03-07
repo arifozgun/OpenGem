@@ -281,6 +281,9 @@ export const firebaseDb: IDatabase = {
             accountEmail: log.accountEmail,
             question: log.question,
             answer: log.answer,
+            ...(log.systemInstruction && { systemInstruction: log.systemInstruction }),
+            ...(log.model && { model: log.model }),
+            ...(log.isFallback !== undefined && { isFallback: log.isFallback }),
             tokensUsed: log.tokensUsed,
             success: log.success ?? true, // default to true if undefined for older code
             timestamp: new Date()
@@ -299,6 +302,9 @@ export const firebaseDb: IDatabase = {
                 accountEmail: data.accountEmail,
                 question: data.question,
                 answer: data.answer,
+                ...(data.systemInstruction && { systemInstruction: data.systemInstruction }),
+                ...(data.model && { model: data.model }),
+                ...(data.isFallback !== undefined && { isFallback: data.isFallback }),
                 tokensUsed: data.tokensUsed || 0,
                 success: data.success,
                 timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : new Date(data.timestamp)

@@ -732,6 +732,44 @@ print(llm.invoke("Hello!").content)</pre>
                     </div>
                 </div>
 
+                <!-- Model Configuration Card -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2>Model Configuration</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <div class="model-config-grid">
+
+                            <div class="model-config-item">
+                                <div class="db-status-label">Fallback</div>
+                                <select id="modelFallback" class="chat-model-selector" style="width: 100%;">
+                                    <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+                                    <option value="gemini-3-pro-preview">gemini-3-pro-preview</option>
+                                    <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+                                    <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                                    <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                                </select>
+                            </div>
+                            <div class="model-config-arrow">→</div>
+                            <div class="model-config-item">
+                                <div class="db-status-label">Fallback V2</div>
+                                <select id="modelFallbackV2" class="chat-model-selector" style="width: 100%;">
+                                    <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+                                    <option value="gemini-3-pro-preview">gemini-3-pro-preview</option>
+                                    <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+                                    <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                                    <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                                </select>
+                            </div>
+                            <div class="model-config-save">
+                                <button class="btn btn-primary" id="saveModelsBtn"
+                                    style="white-space: nowrap; min-width: 72px;">Save</button>
+                            </div>
+                        </div>
+                        <div id="modelSaveStatus" style="min-height: 0; transition: min-height 0.2s ease;"></div>
+                    </div>
+                </div>
+
                 <!-- Privacy Mode Card -->
                 <div class="card" style="margin-bottom: 16px;">
                     <div class="card-header">

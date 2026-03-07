@@ -211,6 +211,71 @@ async function loadSettings() {
             });
         }
     }
+
+    // Load model configuration
+    try {
+        const modelsRes = await fetch('/api/admin/models');
+        if (modelsRes.ok) {
+            const models = await modelsRes.json();
+            const fallbackEl = document.getElementById('modelFallback');
+            const fallbackV2El = document.getElementById('modelFallbackV2');
+            if (fallbackEl) fallbackEl.value = models.fallback || '';
+            if (fallbackV2El) fallbackV2El.value = models.fallbackV2 || '';
+        }
+    } catch (e) {
+        console.error('Failed to load model config:', e);
+    }
+
+    // Save models button
+    const saveModelsBtn = document.getElementById('saveModelsBtn');
+    if (saveModelsBtn && !saveModelsBtn._listenerAdded) {
+        saveModelsBtn._listenerAdded = true;
+        saveModelsBtn.addEventListener('click', saveModels);
+    }
+}
+
+async function saveModels() {
+    const fallback = document.getElementById('modelFallback')?.value.trim();
+    const fallbackV2 = document.getElementById('modelFallbackV2')?.value.trim();
+    const statusEl = document.getElementById('modelSaveStatus');
+
+    if (!fallback || !fallbackV2) {
+        showModelStatus(statusEl, '<div class="db-note" style="color: var(--red);">Both fallback model fields are required.</div>');
+        return;
+    }
+
+    const saveBtn = document.getElementById('saveModelsBtn');
+    if (saveBtn) { saveBtn.disabled = true; }
+
+    try {
+        const res = await fetch('/api/admin/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fallback, fallbackV2 })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showModelStatus(statusEl, '<div class="db-note db-note-success" style="margin-top: 12px;">Model configuration saved successfully.</div>');
+        } else {
+            showModelStatus(statusEl, '<div class="db-note" style="color: var(--red); margin-top: 12px;">' + (data.error || 'Save failed.') + '</div>');
+        }
+    } catch (e) {
+        showModelStatus(statusEl, '<div class="db-note" style="color: var(--red); margin-top: 12px;">Network error. Please try again.</div>');
+    }
+
+    if (saveBtn) { saveBtn.disabled = false; }
+}
+
+function showModelStatus(el, html) {
+    if (!el) return;
+    el.style.opacity = '1';
+    el.innerHTML = html;
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(() => {
+        el.style.transition = 'opacity 0.3s ease';
+        el.style.opacity = '0';
+        setTimeout(() => { el.innerHTML = ''; el.style.opacity = '1'; el.style.transition = ''; }, 300);
+    }, 3500);
 }
 
 // DB Switch Modal
@@ -740,7 +805,18 @@ function renderLogsBatch() {
         }
 
         const tokensTd = document.createElement('td');
-        tokensTd.textContent = formatNumber(log.tokensUsed || 0);
+        tokensTd.innerHTML = `<div>${formatNumber(log.tokensUsed || 0)}</div>`;
+        if (log.model) {
+            let modelLabel = log.model.replace('models/', '');
+            let modelHtml = `<div style="font-size: 11px; margin-top: 4px; color: var(--text-secondary);">${modelLabel}</div>`;
+            if (log.isFallback) {
+                modelHtml = `<div style="font-size: 11px; margin-top: 4px; color: var(--orange); display: flex; align-items: center; gap: 4px;">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    Fallback
+                </div>`;
+            }
+            tokensTd.innerHTML += modelHtml;
+        }
 
         row.append(timeTd, emailTd, questionTd, answerTd, tokensTd);
         row.addEventListener('click', () => showLogDetail(log));
@@ -811,11 +887,20 @@ function showLogDetail(log) {
                 <span class="log-detail-label">Tokens Used</span>
                 <span class="log-detail-value">${formatNumber(log.tokensUsed || 0)}</span>
             </div>
+            ${log.model ? `
+            <div class="log-detail-item">
+                <span class="log-detail-label">Model</span>
+                <span class="log-detail-value">
+                    ${log.model.replace('models/', '')}
+                    ${log.isFallback ? '<span class="badge badge-inactive" style="margin-left: 6px; background: rgba(245,158,11,0.1); color: var(--orange);">Fallback</span>' : ''}
+                </span>
+            </div>
+            ` : ''}
         </div>
         ${log.systemInstruction ? `
-        <div style="background: var(--bg-card, rgba(139,92,246,0.06)); border: 1px solid var(--accent, #8b5cf6); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px;">
-            <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent, #8b5cf6); margin-bottom: 8px;">⚙️ System Prompt</div>
-            <div class="log-detail-text" style="font-size: 13px; line-height: 1.6; opacity: 0.92; white-space: pre-wrap; word-break: break-word;">${renderText(log.systemInstruction)}</div>
+        <div class="log-detail-section">
+            <div class="log-detail-section-title">System Prompt</div>
+            <div class="log-detail-text">${renderText(log.systemInstruction)}</div>
         </div>
         ` : ''}
         <div class="log-detail-section">
@@ -1347,6 +1432,7 @@ You are helpful, concise, and knowledgeable. When users ask about OpenGem, answe
         let thoughtText = '';
         let thoughtContainer = null;
         let thoughtContent = null;
+        let actualModel = model;
 
         // Read SSE stream
         const reader = res.body.getReader();
@@ -1374,6 +1460,10 @@ You are helpful, concise, and knowledgeable. When users ask about OpenGem, answe
                         const parsed = JSON.parse(dataStr);
                         if (parsed.error) {
                             throw new Error(parsed.error.message);
+                        }
+                        if (parsed.openGemModelChange) {
+                            actualModel = parsed.openGemModelChange;
+                            continue;
                         }
                         const candidates = parsed.candidates || parsed.response?.candidates;
                         if (candidates?.[0]?.content?.parts) {
@@ -1515,7 +1605,11 @@ You are helpful, concise, and knowledgeable. When users ask about OpenGem, answe
         // Model ID label
         const modelLabel = document.createElement('span');
         modelLabel.className = 'chat-model-label';
-        modelLabel.textContent = model;
+        if (actualModel !== model) {
+            modelLabel.innerHTML = `${actualModel} <span class="badge badge-inactive" style="margin-left: 6px; background: rgba(245,158,11,0.1); color: var(--orange); border: 1px solid rgba(245,158,11,0.2);">Fallback</span>`;
+        } else {
+            modelLabel.textContent = actualModel;
+        }
 
         actionBar.appendChild(btnCopy);
         actionBar.appendChild(btnReload);

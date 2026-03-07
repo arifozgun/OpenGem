@@ -5,16 +5,16 @@
   <img alt="OpenGem Logo" src="public/logos/black.png" height="120">
 </picture>
 
-# OpenGem 0.2.1
+# OpenGem 0.2.5
 
 **Free, Open-Source AI API Gateway for Gemini Models**
 
-[![Version](https://img.shields.io/badge/Version-0.2.1-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
+[![Version](https://img.shields.io/badge/Version-0.2.5-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://typescriptlang.org)
 
-Transform any standard **Google Account** into a free AI API endpoint. OpenGem uses reverse-engineered Gemini CLI credentials to access Google's free-tier Gemini API, providing a standard `POST /v1beta/models/{model}:generateContent` interface that works natively with official Google Gen AI SDKs.
+Transform any standard **Google Account** into a free AI API endpoint. OpenGem utilizes Gemini CLI-compatible credentials to access Google's free-tier Gemini API, providing a standard `POST /v1beta/models/{model}:generateContent` interface that works natively with official Google Gen AI SDKs.
 
 [Quick Start](#quick-start) · [How It Works](#how-it-works) · [API Usage](#api-usage) · [Admin Dashboard](#admin-dashboard)
 
@@ -34,7 +34,7 @@ OpenGem is an open-source proxy and API gateway designed to grant developers fre
 
 | Feature | Description |
 |---------|-------------|
-| **Completely Free Access** | Leverages Google's free-tier Gemini API using reverse-engineered credentials. |
+| **Completely Free Access** | Leverages Google's free-tier Gemini API using official CLI-equivalent authentication. |
 | **Smart Load Balancing** | Automatically rotates across multiple Google accounts with exponential backoff, jitter, client-side rate limiting, and concurrency control. |
 | **Standardized API** | Native `v1beta` models endpoint compatibility. Works perfectly with `@google/genai` and `google-genai` SDKs. |
 | **Function Calling** | Full support for native Gemini `tools` and `toolConfig`, enabling AI agents and complex tool architectures. |
@@ -125,9 +125,9 @@ sequenceDiagram
 
 OpenGem dynamically manages a pool of authenticated Google accounts with a multi-layered stability system inspired by [openclaw](https://github.com/mariozechner/openclaw). When a 429 error occurs, the system classifies it (rate limit vs. quota exhaustion) and applies the appropriate strategy: temporary cooldowns with escalating durations and automatic probe recovery — accounts are **never** permanently deactivated. Concurrent API requests are throttled via a semaphore (max 3), inter-account delays prevent IP-level rate limiting, and exponential backoff with jitter eliminates thundering herd problems.
 
-### Reverse Engineering Methodology
+### Authentication Methodology
 
-This project utilizes the identical OAuth credentials deployed by the official [Gemini CLI](https://github.com/google-gemini/gemini-cli) to authenticate with Google's internal Code Assist API. Consequently, each connected Google account inherits a free-tier project provisioning access to premier Gemini models.
+This project utilizes the identical OAuth credentials deployed by the official [Gemini CLI](https://github.com/google-gemini/gemini-cli) to authenticate with Google's cloud services. Consequently, each connected Google account inherits a project provisioning access to premier Gemini models.
 
 ---
 
@@ -384,7 +384,7 @@ This repository is distributed under the [MIT License](LICENSE).
 > [!CAUTION]
 > **This project is intended strictly for educational purposes, personal research, and learning.**
 
-OpenGem is a proof-of-concept project that demonstrates API gateway architecture, multi-account load balancing, and OAuth authentication patterns. It utilizes credentials derived from Google's open-source [Gemini CLI](https://github.com/google-gemini/gemini-cli) project.
+OpenGem is a proof-of-concept project that demonstrates API gateway architecture, multi-account load balancing, and OAuth authentication patterns. It utilizes authentication flows consistent with Google's open-source [Gemini CLI](https://github.com/google-gemini/gemini-cli) project.
 
 **By using this software, you acknowledge that:**
 

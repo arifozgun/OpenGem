@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 
 import { nativeFetch } from './http';
+import { isConfigured, getConfig } from './config';
 
 export const GEMINI_CLI_CREDENTIALS = {
     clientId: '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com',
@@ -9,9 +10,33 @@ export const GEMINI_CLI_CREDENTIALS = {
 
 const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 export const GEMINI_API_BASE = `${CODE_ASSIST_ENDPOINT}/v1internal`;
-export const DEFAULT_MODEL = 'gemini-3-flash-preview';      // Primary model
-export const FALLBACK_MODEL = 'gemini-3-pro-preview';        // First fallback (on 429)
-export const FALLBACK_MODEL_V2 = 'gemini-3.1-pro-preview';  // Second fallback (if pro also 429)
+export const DEFAULT_MODEL = 'gemini-3-flash-preview';      // Primary model (hardcoded default)
+export const FALLBACK_MODEL = 'gemini-3-pro-preview';        // First fallback (hardcoded default)
+export const FALLBACK_MODEL_V2 = 'gemini-3.1-pro-preview';  // Second fallback (hardcoded default)
+
+// --- Dynamic model getters (read from config, fallback to hardcoded defaults) ---
+
+
+
+export function getFirstFallbackModel(): string {
+    try {
+        if (isConfigured()) {
+            const config = getConfig();
+            if (config.models?.fallback) return config.models.fallback;
+        }
+    } catch { /* fallback to default */ }
+    return FALLBACK_MODEL;
+}
+
+export function getSecondFallbackModel(): string {
+    try {
+        if (isConfigured()) {
+            const config = getConfig();
+            if (config.models?.fallbackV2) return config.models.fallbackV2;
+        }
+    } catch { /* fallback to default */ }
+    return FALLBACK_MODEL_V2;
+}
 
 export const OAUTH_CONFIG = {
     clientId: GEMINI_CLI_CREDENTIALS.clientId,

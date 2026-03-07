@@ -9,6 +9,8 @@ export interface RequestLog {
     question: string;
     answer: string;
     systemInstruction?: string;
+    model?: string;
+    isFallback?: boolean;
     tokensUsed: number;
     success: boolean;
     timestamp: Date | number;

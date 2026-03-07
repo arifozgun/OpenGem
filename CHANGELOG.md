@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-03-07
+
+### Added
+- **Dynamic Model Configuration** — Fallback models can now be changed from the **Settings** page in the admin dashboard, eliminating the need to modify source code. (`src/services/gemini.ts`, `src/services/config.ts`)
+- **Model Configuration API** — New admin endpoints `GET /POST /api/admin/models` for reading and updating the fallback model chain. (`src/index.ts`)
+- **Settings UI** — Added a "Model Configuration" card to the Settings page with two input fields and a save button for managing the fallback model chain. (`public/index.html`, `public/admin.js`)
+
+### Fixed
+- **Primary Model Configuration** — Removed the primary model configuration setting from the dashboard and backend, as the primary model is already specified dynamically via API payloads. The setting is now cleanly dedicated to managing fallback models. (`src/services/config.ts`, `src/services/gemini.ts`, `src/index.ts`, `src/controllers/chat.ts`, `public/admin.js`, `public/index.html`)
+- **System Prompt Logging** — Fixed a bug where system prompts were not being saved in request logs. Both database backends (`localDb.ts`, `firebase.ts`) were explicitly listing fields to save but omitting `systemInstruction`. Also added support for the `system_instruction` (snake_case) request body variant and nested `content.parts` format. (`src/controllers/chat.ts`, `src/services/localDb.ts`, `src/services/firebase.ts`)
+
+### Changed
+- Refactored `chat.ts` to use dynamic model getters (`getDefaultModel()`, `getFirstFallbackModel()`, `getSecondFallbackModel()`) instead of hardcoded constants for runtime configurability.
+- Model configuration is stored in `config.json` under the `models` key (unencrypted — model names are not sensitive).
+- Incremented package version to `0.2.5`.
+
 ## [0.2.1] - 2026-02-26
 
 ### Added

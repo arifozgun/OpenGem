@@ -1300,6 +1300,45 @@ body {
     color: #1b8a36;
 }
 
+/* Model Configuration */
+.model-config-grid {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.model-config-item {
+    flex: 1;
+    min-width: 0;
+}
+
+.model-config-arrow {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    padding-bottom: 10px;
+    flex-shrink: 0;
+}
+
+.model-config-save {
+    padding-bottom: 0;
+    flex-shrink: 0;
+    align-self: flex-end;
+}
+
+@media (max-width: 768px) {
+    .model-config-grid {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .model-config-arrow {
+        text-align: center;
+        padding: 0;
+        font-size: 16px;
+    }
+}
+
 /* ===== CHAT PAGE ===== */
 .chat-model-selector {
     height: 40px;

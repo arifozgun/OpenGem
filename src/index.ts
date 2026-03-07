@@ -10,7 +10,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { getDatabase, invalidateDbCache } from './services/database';
 import { requireAdmin } from './middleware/auth';
-import { isConfigured, getConfig, saveConfig, generateJwtSecret, generateApiKey, verifyUsername, switchDatabaseBackend } from './services/config';
+import { isConfigured, getConfig, saveConfig, generateJwtSecret, generateApiKey, verifyUsername, switchDatabaseBackend, updateModels } from './services/config';
 import {
     OAUTH_CONFIG,
     generatePkce,
@@ -21,7 +21,10 @@ import {
     checkAccountTier,
     GEMINI_API_BASE,
     DEFAULT_MODEL,
-    FALLBACK_MODEL
+    FALLBACK_MODEL,
+    FALLBACK_MODEL_V2,
+    getFirstFallbackModel,
+    getSecondFallbackModel
 } from './services/gemini';
 import { warmAccountCache, invalidateAccountCache } from './services/account-manager';
 
@@ -483,6 +486,47 @@ app.post('/api/admin/db-switch', requireAdmin, async (req, res) => {
 // --- GEMINI PROXY ROUTE ---
 
 import { handleGenerateContent, handleAdminChat } from './controllers/chat';
+
+// --- MODEL CONFIGURATION ROUTES ---
+
+app.get('/api/admin/models', requireAdmin, (req, res) => {
+    try {
+        res.json({
+            fallback: getFirstFallbackModel(),
+            fallbackV2: getSecondFallbackModel(),
+        });
+    } catch (err: any) {
+        res.status(500).json({ error: 'Failed to get model configuration.' });
+    }
+});
+
+app.post('/api/admin/models', requireAdmin, (req, res) => {
+    try {
+        const { fallback, fallbackV2 } = req.body;
+
+        if (!fallback || !fallbackV2) {
+            return res.status(400).json({ error: 'Both fallback model fields are required: fallback, fallbackV2.' });
+        }
+
+        if (typeof fallback !== 'string' || typeof fallbackV2 !== 'string') {
+            return res.status(400).json({ error: 'All model fields must be strings.' });
+        }
+
+        updateModels({
+            fallback: fallback.trim(),
+            fallbackV2: fallbackV2.trim(),
+        });
+
+        res.json({
+            success: true,
+            message: 'Model configuration updated successfully.',
+            models: { fallback: fallback.trim(), fallbackV2: fallbackV2.trim() },
+        });
+    } catch (err: any) {
+        console.error('Model config update error:', err);
+        res.status(500).json({ error: 'Failed to update model configuration.' });
+    }
+});
 
 const apiLimiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minute

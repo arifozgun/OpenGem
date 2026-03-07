@@ -298,6 +298,9 @@ export const localDb: IDatabase = {
             accountEmail: log.accountEmail,
             question: log.question,
             answer: log.answer,
+            ...(log.systemInstruction && { systemInstruction: log.systemInstruction }),
+            ...(log.model && { model: log.model }),
+            ...(log.isFallback !== undefined && { isFallback: log.isFallback }),
             tokensUsed: log.tokensUsed,
             success: log.success ?? true,
             timestamp: new Date().toISOString(),
@@ -315,7 +318,9 @@ export const localDb: IDatabase = {
             .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
             .slice(0, limitCount)
             .map(l => ({
-                ...l,
+                ...(l.systemInstruction && { systemInstruction: l.systemInstruction }),
+                ...(l.model && { model: l.model }),
+                ...(l.isFallback !== undefined && { isFallback: l.isFallback }),
                 timestamp: new Date(l.timestamp),
             }));
     },

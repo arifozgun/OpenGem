@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { getDatabase } from '../services/database';
 import { nativeFetch, nativeFetchStream } from '../services/http';
-import { GEMINI_API_BASE, DEFAULT_MODEL, FALLBACK_MODEL, FALLBACK_MODEL_V2 } from '../services/gemini';
+import { GEMINI_API_BASE, DEFAULT_MODEL, getFirstFallbackModel, getSecondFallbackModel } from '../services/gemini';
 import { accountRateLimiter } from '../services/rate-limiter';
 import { classifyError } from '../services/error-classifier';
 import {
@@ -42,16 +42,17 @@ function classify429(text: string): 'quota' | 'rate_limit' {
 }
 
 /** Returns the next model to try after a 429:
- *  flash → pro → pro-3.1 → null (no more fallbacks)
+ *  primary → fallback → fallbackV2 → null (no more fallbacks)
  */
 function getFallbackModel(current: string): string | null {
-    if (current === FALLBACK_MODEL_V2) return null;          // Already on last resort
-    if (current === FALLBACK_MODEL) return FALLBACK_MODEL_V2; // pro → pro-3.1
-    return FALLBACK_MODEL;                                    // flash → pro
+    const fb1 = getFirstFallbackModel();
+    const fb2 = getSecondFallbackModel();
+    if (current === fb2) return null;   // Already on last resort
+    if (current === fb1) return fb2;    // fallback → fallbackV2
+    return fb1;                          // primary → fallback
 }
 
 function resolveModel(model: string): string {
-    if (model === 'gemini-3.1-pro-preview') return FALLBACK_MODEL;
     return model || DEFAULT_MODEL;
 }
 
@@ -101,7 +102,7 @@ async function selectReadyAccounts() {
 
 // ─── Request logging ──────────────────────────────────────
 
-function logRequest(db: any, email: string, contents: any[], answer: string, tokens: number, success: boolean, systemInstruction?: any) {
+function logRequest(db: any, email: string, contents: any[], answer: string, tokens: number, success: boolean, systemInstruction?: any, model?: string, isFallback?: boolean) {
     let question = 'Unknown';
     const last = contents?.[contents.length - 1];
     if (last?.parts) {
@@ -118,10 +119,13 @@ function logRequest(db: any, email: string, contents: any[], answer: string, tok
     if (typeof systemInstruction === 'string') si = systemInstruction;
     else if (systemInstruction?.parts) si = systemInstruction.parts.map((p: any) => p.text || '').filter(Boolean).join('\n');
     else if (systemInstruction?.text) si = systemInstruction.text;
+    else if (systemInstruction?.content?.parts) si = systemInstruction.content.parts.map((p: any) => p.text || '').filter(Boolean).join('\n');
 
     db.addRequestLog({
         accountEmail: email, question, answer,
         ...(si && { systemInstruction: si }),
+        ...(model && { model }),
+        ...(isFallback !== undefined && { isFallback }),
         tokensUsed: tokens, success, timestamp: new Date(),
     }).catch((err: any) => console.error('Log write error:', err));
 }
@@ -130,7 +134,8 @@ function logRequest(db: any, email: string, contents: any[], answer: string, tok
 
 export const handleGenerateContent = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { contents, generationConfig, systemInstruction, tools, toolConfig, tool_config } = req.body;
+        const { contents, generationConfig, systemInstruction, system_instruction, tools, toolConfig, tool_config } = req.body;
+        const finalSystemInstruction = systemInstruction || system_instruction;
         const model = resolveModel(req.params.model as string);
 
         if (!contents || !Array.isArray(contents)) {
@@ -141,10 +146,10 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
 
         const finalToolConfig = toolConfig || tool_config;
         if (req.params.action === 'streamGenerateContent') {
-            return handleStreamGenerateContent(req, res, model, contents, generationConfig, systemInstruction, tools, finalToolConfig);
+            return handleStreamGenerateContent(req, res, model, contents, generationConfig, finalSystemInstruction, tools, finalToolConfig);
         }
 
-        const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, systemInstruction, tools, finalToolConfig);
+        const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, finalSystemInstruction, tools, finalToolConfig);
         if (!result) { res.status(503).json({ error: 'All Gemini accounts exhausted or failed.' }); return; }
         res.json(result);
     } catch (e: any) {
@@ -216,7 +221,7 @@ export async function tryGenerateContentWithAccounts(
                             if (text) {
                                 markAccountSuccess(account.email);
                                 await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens });
-                                logRequest(db, account.email, contents, text, tokens, true, systemInstruction);
+                                logRequest(db, account.email, contents, text, tokens, true, systemInstruction, fallback, true);
                                 console.log(`✅ Fallback fulfilled by ${account.email} [${fallback}]`);
                                 return data.response;
                             }
@@ -228,7 +233,7 @@ export async function tryGenerateContentWithAccounts(
                     try { errCategory = classify429(await response.text()); } catch { /* ignore */ }
                     markAccountCooldown(account.email, errCategory === 'quota' ? 'quota' : 'rate_limit');
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                    logRequest(db, account.email, contents, `ERROR 429: ${errCategory} cooldown`, 0, false, systemInstruction);
+                    logRequest(db, account.email, contents, `ERROR 429: ${errCategory} cooldown`, 0, false, systemInstruction, usedModel, false);
                     continue;
                 }
 
@@ -236,7 +241,7 @@ export async function tryGenerateContentWithAccounts(
                     const text = await response.text();
                     console.error(`❌ API error ${response.status} for ${account.email}: ${text}`);
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                    logRequest(db, account.email, contents, `ERROR ${response.status}: ${text.substring(0, 100)}`, 0, false, systemInstruction);
+                    logRequest(db, account.email, contents, `ERROR ${response.status}: ${text.substring(0, 100)}`, 0, false, systemInstruction, usedModel, false);
                     continue;
                 }
 
@@ -246,7 +251,7 @@ export async function tryGenerateContentWithAccounts(
                 if (text) {
                     markAccountSuccess(account.email);
                     await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens });
-                    logRequest(db, account.email, contents, text, tokens, true, systemInstruction);
+                    logRequest(db, account.email, contents, text, tokens, true, systemInstruction, usedModel, false);
                     console.log(`✅ Fulfilled by ${account.email}`);
                     return data.response;
                 }
@@ -255,7 +260,7 @@ export async function tryGenerateContentWithAccounts(
                 const cat = classifyError(e.message || '');
                 markAccountCooldown(account.email, cat);
                 await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                logRequest(db, account.email, contents, `ERROR: ${e.message?.substring(0, 100) || 'Network Error'}`, 0, false, systemInstruction);
+                logRequest(db, account.email, contents, `ERROR: ${e.message?.substring(0, 100) || 'Network Error'}`, 0, false, systemInstruction, model || DEFAULT_MODEL, false);
             }
         }
 
@@ -311,7 +316,6 @@ async function pipeStream(stream: any, res: Response, unwrapEnvelope: boolean): 
         });
 
         stream.on('end', () => {
-            res.write('data: [DONE]\n\n');
             res.end();
             resolve({ fullAnswer, tokenUsage });
         });
@@ -418,11 +422,15 @@ async function streamWithAccounts(
                     });
                 }
 
+                if (usedModel !== model) {
+                    res.write(`data: ${JSON.stringify({ openGemModelChange: usedModel })}\n\n`);
+                }
+
                 try {
                     const { fullAnswer, tokenUsage } = await pipeStream(stream, res, !headersAlreadySent);
                     markAccountSuccess(account.email);
                     await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: tokenUsage });
-                    logRequest(db, account.email, contents, fullAnswer, tokenUsage, true, systemInstruction);
+                    logRequest(db, account.email, contents, fullAnswer, tokenUsage, true, systemInstruction, usedModel, usedModel !== model);
                     console.log(`✅ Stream fulfilled by ${account.email} [${usedModel}]`);
                     return; // done
                 } catch (streamErr: any) {
@@ -474,7 +482,8 @@ function handleStreamGenerateContent(
 
 export async function handleAdminChat(req: Request, res: Response): Promise<void> {
     try {
-        const { contents, model: reqModel, generationConfig, systemInstruction, tools, toolConfig, tool_config } = req.body;
+        const { contents, model: reqModel, generationConfig, systemInstruction, system_instruction, tools, toolConfig, tool_config } = req.body;
+        const finalSystemInstruction = systemInstruction || system_instruction;
         const model = resolveModel(reqModel || DEFAULT_MODEL);
 
         if (!contents || !Array.isArray(contents)) {
@@ -491,7 +500,7 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
             'X-Accel-Buffering': 'no',
         });
 
-        await streamWithAccounts(model, contents, generationConfig, systemInstruction, tools, toolConfig || tool_config, res, true);
+        await streamWithAccounts(model, contents, generationConfig, finalSystemInstruction, tools, toolConfig || tool_config, res, true);
     } catch (e: any) {
         console.error('Admin Chat Error:', e);
         if (!res.headersSent) res.status(500).json({ error: 'Internal Server Error' });
