@@ -367,7 +367,7 @@
             <section id="page-docs" class="page">
                 <div class="page-header">
                     <h1>API Documentation</h1>
-                    <p class="page-desc">How to integrate with OpenGem</p>
+                    <p class="page-desc">Native Gemini, OpenAI and Anthropic compatible endpoints</p>
                 </div>
 
                 <!-- Quick Reference -->
@@ -380,14 +380,107 @@
                         <div class="doc-ref-item">
                             <div class="doc-ref-label">Authentication</div>
                             <code class="doc-code-inline">Authorization: Bearer sk-your-api-key</code>
-                            <p class="doc-ref-alt">or use query param <code
-                                    class="doc-code-inline">?key=sk-your-api-key</code></p>
+                            <p class="doc-ref-alt">also accepts <code class="doc-code-inline">x-api-key</code>,
+                                <code class="doc-code-inline">x-goog-api-key</code> and
+                                <code class="doc-code-inline">?key=</code>
+                            </p>
                         </div>
                         <div class="doc-ref-item">
-                            <div class="doc-ref-label">Endpoint</div>
+                            <div class="doc-ref-label">Endpoints</div>
                             <div class="doc-ref-endpoint">
                                 <span class="doc-method">POST</span>
                                 <code class="doc-code-inline">/v1beta/models/{model}:generateContent</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Provider Compatibility -->
+                <div class="doc-section">
+                    <h2 class="doc-section-title">API Compatibility</h2>
+                    <p class="doc-section-subtitle">
+                        OpenGem speaks three protocols natively. Point any compatible SDK at the matching base URL —
+                        requests are translated to Gemini transparently behind the scenes, with the same multi-account
+                        rotation, fallbacks and streaming.
+                    </p>
+                    <div class="provider-grid">
+                        <!-- Gemini -->
+                        <div class="provider-card">
+                            <span class="provider-card-tag">Native</span>
+                            <div class="provider-card-head">
+                                <div class="provider-card-icon">
+                                    <img src="/icons/gemini.png" alt="Gemini" width="24" height="24">
+                                </div>
+                                <div>
+                                    <div class="provider-card-title">Google Gemini</div>
+                                    <div class="provider-card-subtitle">@google/genai · google-genai</div>
+                                </div>
+                            </div>
+                            <div class="provider-card-body">
+                                <div class="provider-row">
+                                    <span class="doc-method">POST</span>
+                                    <code>/v1beta/models/{model}:generateContent</code>
+                                </div>
+                                <div class="provider-row">
+                                    <span class="doc-method">POST</span>
+                                    <code>/v1beta/models/{model}:streamGenerateContent</code>
+                                </div>
+                                <div class="provider-row">
+                                    Auth: <code>x-goog-api-key</code> · <code>?key=</code>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- OpenAI -->
+                        <div class="provider-card">
+                            <span class="provider-card-tag tag-blue">Compatible</span>
+                            <div class="provider-card-head">
+                                <div class="provider-card-icon">
+                                    <img src="/icons/openai.svg" alt="OpenAI" width="24" height="24">
+                                </div>
+                                <div>
+                                    <div class="provider-card-title">OpenAI</div>
+                                    <div class="provider-card-subtitle">openai · LangChain · Cline · Cursor</div>
+                                </div>
+                            </div>
+                            <div class="provider-card-body">
+                                <div class="provider-row">
+                                    <span class="doc-method">POST</span>
+                                    <code>/v1/chat/completions</code>
+                                </div>
+                                <div class="provider-row">
+                                    <span class="doc-method">GET</span>
+                                    <code>/v1/models</code>
+                                </div>
+                                <div class="provider-row">
+                                    Auth: <code>Authorization: Bearer</code>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Anthropic -->
+                        <div class="provider-card">
+                            <span class="provider-card-tag tag-orange">Compatible</span>
+                            <div class="provider-card-head">
+                                <div class="provider-card-icon">
+                                    <img src="/icons/claude.svg" alt="Claude" width="24" height="24">
+                                </div>
+                                <div>
+                                    <div class="provider-card-title">Anthropic Claude</div>
+                                    <div class="provider-card-subtitle">@anthropic-ai/sdk · anthropic-py</div>
+                                </div>
+                            </div>
+                            <div class="provider-card-body">
+                                <div class="provider-row">
+                                    <span class="doc-method">POST</span>
+                                    <code>/v1/messages</code>
+                                </div>
+                                <div class="provider-row">
+                                    Stream: <code>message_start → content_block_*</code>
+                                </div>
+                                <div class="provider-row">
+                                    Auth: <code>x-api-key</code>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -457,9 +550,13 @@
                         <h2>Code Examples</h2>
                         <div class="code-tabs">
                             <button class="code-tab active" data-lang="curl">cURL</button>
-                            <button class="code-tab" data-lang="python">Python</button>
-                            <button class="code-tab" data-lang="javascript">JavaScript</button>
+                            <button class="code-tab" data-lang="python">Gemini · Python</button>
+                            <button class="code-tab" data-lang="javascript">Gemini · JS</button>
                             <button class="code-tab" data-lang="langchain">LangChain</button>
+                            <button class="code-tab" data-lang="openai-py">OpenAI · Python</button>
+                            <button class="code-tab" data-lang="openai-js">OpenAI · JS</button>
+                            <button class="code-tab" data-lang="anthropic-py">Anthropic · Python</button>
+                            <button class="code-tab" data-lang="anthropic-js">Anthropic · JS</button>
                         </div>
                     </div>
 
@@ -512,6 +609,99 @@ llm = ChatGoogleGenerativeAI(
     model="gemini-3.1-pro-preview"
 )
 print(llm.invoke("Hello!").content)</pre>
+                        </div>
+                    </div>
+
+                    <!-- OpenAI · Python -->
+                    <div class="code-panel" data-lang="openai-py">
+                        <div class="doc-code-block">
+                            <div class="doc-code-label">pip install openai &nbsp;·&nbsp; OpenAI-compatible endpoint</div>
+                            <pre>from openai import OpenAI
+
+client = OpenAI(
+    api_key="sk-your-api-key",
+    base_url="<span class="doc-base-url">http://localhost:3050</span>/v1",
+)
+
+# Streaming with usage stats
+stream = client.chat.completions.create(
+    model="gpt-4o",   # transparently routed to Gemini
+    messages=[{"role": "user", "content": "Tell me a long story."}],
+    stream=True,
+    stream_options={"include_usage": True},
+)
+for chunk in stream:
+    delta = chunk.choices[0].delta.content or ""
+    print(delta, end="", flush=True)</pre>
+                        </div>
+                    </div>
+
+                    <!-- OpenAI · JavaScript -->
+                    <div class="code-panel" data-lang="openai-js">
+                        <div class="doc-code-block">
+                            <div class="doc-code-label">npm install openai &nbsp;·&nbsp; OpenAI-compatible endpoint</div>
+                            <pre>import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "sk-your-api-key",
+  baseURL: "<span class="doc-base-url">http://localhost:3050</span>/v1",
+});
+
+const stream = await client.chat.completions.create({
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello, who are you?" }],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content ?? "");
+}</pre>
+                        </div>
+                    </div>
+
+                    <!-- Anthropic · Python -->
+                    <div class="code-panel" data-lang="anthropic-py">
+                        <div class="doc-code-block">
+                            <div class="doc-code-label">pip install anthropic &nbsp;·&nbsp; Anthropic Messages API</div>
+                            <pre>from anthropic import Anthropic
+
+client = Anthropic(
+    api_key="sk-your-api-key",
+    base_url="<span class="doc-base-url">http://localhost:3050</span>",
+)
+
+with client.messages.stream(
+    model="claude-3-5-sonnet-latest",   # transparently routed to Gemini
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Write a haiku about Gemini."}],
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="", flush=True)</pre>
+                        </div>
+                    </div>
+
+                    <!-- Anthropic · JavaScript -->
+                    <div class="code-panel" data-lang="anthropic-js">
+                        <div class="doc-code-block">
+                            <div class="doc-code-label">npm install @anthropic-ai/sdk &nbsp;·&nbsp; Anthropic Messages API</div>
+                            <pre>import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  apiKey: "sk-your-api-key",
+  baseURL: "<span class="doc-base-url">http://localhost:3050</span>",
+});
+
+const stream = client.messages.stream({
+  model: "claude-3-5-sonnet-latest",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Explain neural networks briefly." }],
+});
+
+for await (const event of stream) {
+  if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+    process.stdout.write(event.delta.text);
+  }
+}</pre>
                         </div>
                     </div>
                 </div>
@@ -710,7 +900,67 @@ print(llm.invoke("Hello!").content)</pre>
             <section id="page-settings" class="page">
                 <div class="page-header">
                     <h1>Settings</h1>
-                    <p class="page-desc">Server configuration and database management</p>
+                    <p class="page-desc">Server configuration, database management and API compatibility</p>
+                </div>
+
+                <!-- API Compatibility Card -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2>API Compatibility</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;">
+                            Three live wire formats are served from this gateway. All endpoints share the same API key
+                            store, hashed key validation and per-IP rate limit (120 req/min). Auth errors are returned
+                            in each protocol's native error envelope.
+                        </p>
+                        <div class="compat-list">
+                            <div class="compat-item">
+                                <div class="compat-item-icon">
+                                    <img src="/icons/gemini.png" alt="Gemini" width="20" height="20">
+                                </div>
+                                <div class="compat-item-info">
+                                    <div class="compat-item-title">Google Gemini</div>
+                                    <div class="compat-item-meta">
+                                        <code>POST /v1beta/models/{model}:generateContent</code>
+                                        <span>·</span>
+                                        <span>Auth: <code>x-goog-api-key</code></span>
+                                    </div>
+                                </div>
+                                <span class="compat-item-badge">Native</span>
+                            </div>
+                            <div class="compat-item">
+                                <div class="compat-item-icon">
+                                    <img src="/icons/openai.svg" alt="OpenAI" width="20" height="20">
+                                </div>
+                                <div class="compat-item-info">
+                                    <div class="compat-item-title">OpenAI</div>
+                                    <div class="compat-item-meta">
+                                        <code>POST /v1/chat/completions</code>
+                                        <span>·</span>
+                                        <code>GET /v1/models</code>
+                                        <span>·</span>
+                                        <span>Auth: <code>Authorization: Bearer</code></span>
+                                    </div>
+                                </div>
+                                <span class="compat-item-badge" style="background: var(--blue-bg); color: #0063d1;">Compatible</span>
+                            </div>
+                            <div class="compat-item">
+                                <div class="compat-item-icon">
+                                    <img src="/icons/claude.svg" alt="Claude" width="20" height="20">
+                                </div>
+                                <div class="compat-item-info">
+                                    <div class="compat-item-title">Anthropic Claude</div>
+                                    <div class="compat-item-meta">
+                                        <code>POST /v1/messages</code>
+                                        <span>·</span>
+                                        <span>Auth: <code>x-api-key</code></span>
+                                    </div>
+                                </div>
+                                <span class="compat-item-badge" style="background: var(--orange-bg); color: #b65c00;">Compatible</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Database Backend Card -->

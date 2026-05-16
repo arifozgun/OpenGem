@@ -6,6 +6,14 @@ interface RequestOptions {
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    /**
+     * Socket inactivity timeout in milliseconds. Defaults to 30_000 for
+     * `nativeFetch` and 120_000 for `nativeFetchStream`. Long Gemini
+     * non-stream generations buffer the entire response upstream, so the
+     * socket remains idle for the duration of generation — for those calls
+     * the caller must pass an explicit larger value (e.g. 300_000).
+     */
+    timeoutMs?: number;
 }
 
 interface HttpResponse {
@@ -45,8 +53,9 @@ export function nativeFetchStream(url: string, options: RequestOptions = {}): Pr
         });
 
         req.on('error', (err) => reject(err));
-        req.setTimeout(120000, () => {
-            req.destroy(new Error('Stream request timeout after 120s'));
+        const streamTimeout = options.timeoutMs ?? 120000;
+        req.setTimeout(streamTimeout, () => {
+            req.destroy(new Error(`Stream request timeout after ${Math.round(streamTimeout / 1000)}s`));
         });
 
         if (options.body) {
@@ -100,8 +109,9 @@ export function nativeFetch(url: string, options: RequestOptions = {}): Promise<
         });
 
         req.on('error', (err) => reject(err));
-        req.setTimeout(30000, () => {
-            req.destroy(new Error('Request timeout after 30s'));
+        const timeout = options.timeoutMs ?? 30000;
+        req.setTimeout(timeout, () => {
+            req.destroy(new Error(`Request timeout after ${Math.round(timeout / 1000)}s`));
         });
 
         if (options.body) {

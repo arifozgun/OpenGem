@@ -5,11 +5,11 @@
   <img alt="OpenGem Logo" src="public/logos/black.png" height="120">
 </picture>
 
-# OpenGem 0.3.0
+# OpenGem 0.3.1
 
-**Free, Open-Source AI API Gateway for Gemini Models**
+**Free, Open-Source AI API Gateway with Gemini, OpenAI & Anthropic Compatibility**
 
-[![Version](https://img.shields.io/badge/Version-0.3.0-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
+[![Version](https://img.shields.io/badge/Version-0.3.1-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://typescriptlang.org)
@@ -226,6 +226,153 @@ print(response.content)
 
 ---
 
+## OpenAI & Anthropic Compatibility
+
+OpenGem also exposes the **OpenAI Chat Completions** and **Anthropic Messages** wire formats so existing SDKs and tools (LangChain, LlamaIndex, OpenWebUI, Cline, Cursor, Anthropic SDKs, etc.) work out of the box. Requests are translated transparently to Gemini behind the scenes — multi-account rotation, fallbacks, cooldowns and streaming all behave identically.
+
+### Endpoint URLs
+
+```text
+POST /v1/chat/completions   # OpenAI compatible (streaming + non-streaming)
+GET  /v1/models             # OpenAI model list
+POST /v1/messages           # Anthropic Messages compatible (streaming + non-streaming)
+```
+
+### Authentication
+
+All four conventions are accepted on every endpoint:
+
+| Header / Param            | SDK family          |
+|---------------------------|---------------------|
+| `Authorization: Bearer …` | OpenAI / Gemini SDK |
+| `x-api-key: …`            | Anthropic SDK       |
+| `x-goog-api-key: …`       | Gemini SDK          |
+| `?key=…`                  | Gemini query string |
+
+### Model Aliasing
+
+Any model id starting with `gemini-` is passed through to Gemini directly. Common OpenAI / Anthropic model names (e.g. `gpt-4o`, `claude-3-5-sonnet-latest`) are transparently mapped onto your configured default Gemini model — the requested model id is preserved in every response and stream chunk so downstream code sees what it expects.
+
+### OpenAI SDK (Python)
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="your-api-key-here",
+    base_url="http://localhost:3050/v1",
+)
+
+# Non-streaming
+resp = client.chat.completions.create(
+    model="gpt-4o",   # transparently routed to Gemini
+    messages=[{"role": "user", "content": "Explain SSE in one paragraph."}],
+)
+print(resp.choices[0].message.content)
+
+# Streaming
+stream = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Tell me a long story."}],
+    stream=True,
+)
+for chunk in stream:
+    delta = chunk.choices[0].delta.content or ""
+    print(delta, end="", flush=True)
+```
+
+### OpenAI SDK (Node.js)
+
+```javascript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "your-api-key-here",
+  baseURL: "http://localhost:3050/v1",
+});
+
+const stream = await client.chat.completions.create({
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello, who are you?" }],
+  stream: true,
+  stream_options: { include_usage: true },
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content ?? "");
+}
+```
+
+### Anthropic SDK (Python)
+
+```python
+from anthropic import Anthropic
+
+client = Anthropic(
+    api_key="your-api-key-here",
+    base_url="http://localhost:3050",
+)
+
+# Non-streaming
+msg = client.messages.create(
+    model="claude-3-5-sonnet-latest",   # transparently routed to Gemini
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Summarize the theory of relativity."}],
+)
+print(msg.content[0].text)
+
+# Streaming
+with client.messages.stream(
+    model="claude-3-5-sonnet-latest",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Write a haiku about Gemini."}],
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="", flush=True)
+```
+
+### Anthropic SDK (Node.js)
+
+```javascript
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  apiKey: "your-api-key-here",
+  baseURL: "http://localhost:3050",
+});
+
+const stream = client.messages.stream({
+  model: "claude-3-5-sonnet-latest",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Explain neural networks briefly." }],
+});
+
+for await (const event of stream) {
+  if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+    process.stdout.write(event.delta.text);
+  }
+}
+```
+
+### Feature Coverage
+
+| Feature                         | OpenAI `/v1/chat/completions` | Anthropic `/v1/messages` |
+|---------------------------------|:-----------------------------:|:------------------------:|
+| Streaming (SSE)                 | ✅                            | ✅                       |
+| Tool / function calling         | ✅                            | ✅                       |
+| Tool result messages            | ✅                            | ✅                       |
+| Multi-modal (base64 images)     | ✅                            | ✅                       |
+| System messages / `system`      | ✅                            | ✅                       |
+| `temperature`, `top_p`, `stop`  | ✅                            | ✅                       |
+| `response_format: json_object`  | ✅                            | —                        |
+| `top_k`                         | —                             | ✅                       |
+| Usage stats in response         | ✅                            | ✅                       |
+| Usage stats in stream           | ✅ (`include_usage`)          | ✅ (`message_delta`)     |
+
+> **Security note:** OpenAI / Anthropic endpoints share the same hashed API-key store, the same per-IP rate limiter (120 req/min), and the same `requireApiKey` validation as the Gemini proxy. Auth errors are returned in each protocol's native error envelope so SDKs can surface them correctly.
+
+---
+
 ## Admin Dashboard
 
 After completing the initial setup, access the administrative panel at `http://localhost:3050`.
@@ -298,10 +445,17 @@ opengem/
 ├── src/
 │   ├── index.ts         # High-level Express server, automated routing
 │   ├── controllers/
-│   │   └── chat.ts      # Dedicated generative completion handlers
+│   │   ├── chat.ts        # Gemini engine: rotation, retry, sink-driven streaming
+│   │   ├── openai.ts      # OpenAI /v1/chat/completions + /v1/models endpoints
+│   │   └── anthropic.ts   # Anthropic /v1/messages endpoint
 │   ├── middleware/
 │   │   └── auth.ts      # JWT administrative authentication interceptors
 │   └── services/
+│       ├── adapters/
+│       │   ├── openai.ts          # OpenAI ↔ Gemini request/response/stream translator
+│       │   ├── anthropic.ts       # Anthropic ↔ Gemini request/response/stream translator
+│       │   └── model-aliases.ts   # gpt-* / claude-* → Gemini model routing
+│       ├── streaming.ts  # Pluggable StreamSink abstraction (Gemini / OpenAI / Anthropic)
 │       ├── config.ts    # Centralized state management & AES-256 encryption
 │       ├── database.ts  # Abstract database interface & backend factory
 │       ├── firebase.ts  # Integrated Firestore schema operations

@@ -15,6 +15,13 @@ import {
 } from '../services/account-cooldown';
 import { geminiRequestSemaphore, geminiStreamSemaphore, updateConcurrencyLimits } from '../services/concurrency';
 import { getReadyAccounts, ensureFreshToken } from '../services/account-manager';
+import {
+    StreamSink,
+    GeminiNativeSink,
+    normalizeGeminiChunk,
+    safeEnd,
+    safeWrite,
+} from '../services/streaming';
 
 // ─── Constants ────────────────────────────────────────────
 
@@ -25,6 +32,12 @@ const MAX_ATTEMPTS = 5;
 // Small stagger between accounts within a round — reduces burst rate seen from our IP.
 // Without this, 9 accounts fire back-to-back from the same IP and all get 429.
 const INTER_ACCOUNT_STAGGER_MS = 150;
+// Non-stream generateContent buffers the entire response upstream, so the socket
+// stays idle while the model generates. The default 30s socket-inactivity timeout
+// in `nativeFetch` is far too aggressive for long completions (essays, code, etc.)
+// and was the root cause of "Request timeout after 30s" failures on long outputs
+// that streaming did not exhibit (each chunk resets the inactivity timer).
+const GENERATE_CONTENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 // ─── Misc helpers ─────────────────────────────────────────
 
@@ -147,7 +160,18 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
 
         const finalToolConfig = toolConfig || tool_config;
         if (req.params.action === 'streamGenerateContent') {
-            return handleStreamGenerateContent(req, res, model, contents, generationConfig, finalSystemInstruction, tools, finalToolConfig);
+            const sink = new GeminiNativeSink(res, /* headersAlreadyWritten */ false, /* unwrapEnvelope */ true);
+            await streamGeminiWithSink({
+                model,
+                contents,
+                generationConfig,
+                systemInstruction: finalSystemInstruction,
+                tools,
+                toolConfig: finalToolConfig,
+                res,
+                sink,
+            });
+            return;
         }
 
         const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, finalSystemInstruction, tools, finalToolConfig);
@@ -155,16 +179,35 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
         res.json(result);
     } catch (e: any) {
         console.error('Generate Content Error:', e);
-        res.status(500).json({ error: 'Internal Server Error', ...(process.env.NODE_ENV !== 'production' && { message: e.message }) });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Internal Server Error', ...(process.env.NODE_ENV !== 'production' && { message: e.message }) });
+        } else if (!res.writableEnded) {
+            safeEnd(res);
+        }
     }
 };
 
 // ─── Non-streaming rotation ───────────────────────────────
 
-export async function tryGenerateContentWithAccounts(
-    model: string, contents: any[],
-    generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any
-): Promise<any | null> {
+export interface GeminiNonStreamResult {
+    /** The unwrapped Gemini response object (candidates, usageMetadata, etc.). */
+    response: any;
+    /** The Gemini model that actually served the request. */
+    usedModel: string;
+}
+
+/**
+ * Public, return-rich variant for adapter use. Kept separate so that the
+ * legacy `tryGenerateContentWithAccounts` retains its exact return shape.
+ */
+export async function generateContentWithAccounts(
+    model: string,
+    contents: any[],
+    generationConfig?: any,
+    systemInstruction?: any,
+    tools?: any[],
+    toolConfig?: any,
+): Promise<GeminiNonStreamResult | null> {
     const db = getDatabase();
     await updateConcurrencyLimits();
 
@@ -175,7 +218,6 @@ export async function tryGenerateContentWithAccounts(
         for (let i = 0; i < accounts.length; i++) {
             const account = accounts[i];
 
-            // Skip accounts in cooldown (unless probe window reached)
             if (isAccountInCooldown(account.email)) {
                 if (shouldProbeAccount(account.email)) { console.log(`🔍 Probing ${account.email}...`); recordProbe(account.email); }
                 else continue;
@@ -186,7 +228,6 @@ export async function tryGenerateContentWithAccounts(
                 continue;
             }
 
-            // Stagger account attempts to avoid IP-level burst throttling
             if (i > 0) await new Promise(r => setTimeout(r, INTER_ACCOUNT_STAGGER_MS));
 
             try {
@@ -194,7 +235,6 @@ export async function tryGenerateContentWithAccounts(
                 const requestPayload = buildPayload(contents, generationConfig, systemInstruction, tools, toolConfig);
                 let usedModel = model || DEFAULT_MODEL;
 
-                // First try with requested model
                 const geminiBody = (m: string) => ({
                     model: m, project: account.projectId,
                     user_prompt_id: 'default-prompt', request: requestPayload,
@@ -204,33 +244,33 @@ export async function tryGenerateContentWithAccounts(
                     nativeFetch(`${GEMINI_API_BASE}:generateContent`, {
                         method: 'POST', headers: buildHeaders(token),
                         body: JSON.stringify(geminiBody(usedModel)),
+                        timeoutMs: GENERATE_CONTENT_TIMEOUT_MS,
                     })
                 );
 
                 if (response.status === 429) {
-                    // Try fallback model before marking cooldown
                     const fallback = getFallbackModel(usedModel);
                     if (fallback) {
                         console.warn(`⏳ ${account.email} 429 on ${usedModel} — trying ${fallback}...`);
                         const fbResp = await nativeFetch(`${GEMINI_API_BASE}:generateContent`, {
                             method: 'POST', headers: buildHeaders(token),
                             body: JSON.stringify(geminiBody(fallback)),
+                            timeoutMs: GENERATE_CONTENT_TIMEOUT_MS,
                         });
                         if (fbResp.ok) {
                             const data = await fbResp.json() as any;
                             const text = extractText(data.response?.candidates?.[0]);
                             const tokens = data.usageMetadata?.totalTokenCount || data.response?.usageMetadata?.totalTokenCount || 0;
-                            if (text) {
+                            if (text || data.response?.candidates?.[0]) {
                                 markAccountSuccess(account.email);
                                 await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens });
                                 logRequest(db, account.email, contents, text, tokens, true, systemInstruction, fallback, true);
                                 console.log(`✅ Fallback fulfilled by ${account.email} [${fallback}]`);
-                                return data.response;
+                                return { response: data.response, usedModel: fallback };
                             }
                         }
                     }
 
-                    // Classify and apply cooldown
                     let errCategory: 'quota' | 'rate_limit' = 'rate_limit';
                     try { errCategory = classify429(await response.text()); } catch { /* ignore */ }
                     markAccountCooldown(account.email, errCategory === 'quota' ? 'quota' : 'rate_limit');
@@ -250,12 +290,12 @@ export async function tryGenerateContentWithAccounts(
                 const data = await response.json() as any;
                 const text = extractText(data.response?.candidates?.[0]);
                 const tokens = data.usageMetadata?.totalTokenCount || data.response?.usageMetadata?.totalTokenCount || 0;
-                if (text) {
+                if (data.response?.candidates?.[0]) {
                     markAccountSuccess(account.email);
                     await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens });
                     logRequest(db, account.email, contents, text, tokens, true, systemInstruction, usedModel, false);
                     console.log(`✅ Fulfilled by ${account.email}`);
-                    return data.response;
+                    return { response: data.response, usedModel };
                 }
             } catch (e: any) {
                 console.error(`❌ Error with ${account.email}:`, e);
@@ -275,18 +315,51 @@ export async function tryGenerateContentWithAccounts(
     return null;
 }
 
-// ─── Streaming: pipe SSE to client ───────────────────────
+/** Legacy signature kept for backward compatibility — returns `data.response` only. */
+export async function tryGenerateContentWithAccounts(
+    model: string, contents: any[],
+    generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any
+): Promise<any | null> {
+    const result = await generateContentWithAccounts(model, contents, generationConfig, systemInstruction, tools, toolConfig);
+    return result ? result.response : null;
+}
 
-async function pipeStream(stream: any, res: Response, unwrapEnvelope: boolean): Promise<{ fullAnswer: string; tokenUsage: number }> {
-    return new Promise((resolve, reject) => {
+// ─── Streaming pipeline (sink-driven) ─────────────────────
+
+interface PipeStreamResult {
+    fullAnswer: string;
+    tokenUsage: number;
+    finishReason?: string;
+}
+
+/**
+ * Reads a Gemini SSE stream and forwards each parsed chunk to the sink.
+ * Tracks the assembled answer + token usage for logging purposes.
+ *
+ * Design notes:
+ *  - The function does NOT call `sink.finalize()` — the caller does, after
+ *    incrementing stats / writing logs. This keeps the sink lifecycle
+ *    explicit at the call site.
+ *  - Errors thrown by the sink propagate up so the engine can roll over to
+ *    another account (only possible if no chunks have been written yet).
+ */
+async function pipeStream(stream: any, sink: StreamSink): Promise<PipeStreamResult> {
+    return new Promise<PipeStreamResult>((resolve, reject) => {
         let fullAnswer = '';
+        let tokenUsage = 0;
+        let finishReason: string | undefined;
         const decoder = new StringDecoder('utf8');
         let buffer = '';
-        let tokenUsage = 0;
+        let settled = false;
+
+        const settle = (action: () => void) => {
+            if (settled) return;
+            settled = true;
+            action();
+        };
 
         stream.on('data', (chunk: Buffer) => {
             buffer += decoder.write(chunk);
-            
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
 
@@ -296,57 +369,98 @@ async function pipeStream(stream: any, res: Response, unwrapEnvelope: boolean): 
                 if (!jsonStr || jsonStr === '[DONE]') continue;
                 try {
                     const parsed = JSON.parse(jsonStr);
-                    const parts = parsed.candidates?.[0]?.content?.parts
-                        || parsed.response?.candidates?.[0]?.content?.parts;
-                    if (parts) {
-                        for (const p of parts) {
-                            if (p.text) fullAnswer += p.text;
-                            else if (p.functionCall) fullAnswer += `\n\n[Tool Call: ${p.functionCall.name}]\n${JSON.stringify(p.functionCall.args, null, 2)}\n\n`;
-                        }
-                    }
-                    const usage = parsed.usageMetadata || parsed.response?.usageMetadata;
-                    if (usage?.totalTokenCount) tokenUsage = usage.totalTokenCount;
+                    const normalized = normalizeGeminiChunk(parsed);
 
-                    // Fast path: Just forward the raw jsonStr if we dont need to unwrap it
-                    if (!unwrapEnvelope || !parsed.response) {
-                        res.write(`data: ${jsonStr}\n\n`);
-                    } else {
-                        let forwarded = { ...parsed.response };
-                        if (parsed.usageMetadata) forwarded.usageMetadata = parsed.usageMetadata;
-                        res.write(`data: ${JSON.stringify(forwarded)}\n\n`);
+                    for (const t of normalized.textDeltas) fullAnswer += t;
+                    for (const fc of normalized.functionCalls) {
+                        fullAnswer += `\n\n[Tool Call: ${fc.name}]\n${JSON.stringify(fc.args, null, 2)}\n\n`;
+                    }
+                    if (normalized.usage?.totalTokens) tokenUsage = normalized.usage.totalTokens;
+                    if (normalized.finishReason) finishReason = normalized.finishReason;
+
+                    try {
+                        sink.forwardChunk(parsed, normalized, jsonStr);
+                    } catch (sinkErr: any) {
+                        // A sink error after content was already streamed is not
+                        // recoverable — bubble it up.
+                        settle(() => reject(sinkErr));
+                        return;
                     }
                 } catch {
-                    res.write(line + '\n\n');
+                    // Non-JSON SSE line (rare). Drop it; protocols can't reliably
+                    // forward malformed envelopes.
                 }
             }
         });
 
         stream.on('end', () => {
-            res.end();
-            resolve({ fullAnswer, tokenUsage });
+            // Flush any buffered partial chunk (defensive — Gemini ends on \n).
+            if (buffer.trim().length > 0 && buffer.startsWith('data: ')) {
+                const jsonStr = buffer.substring(6).trim();
+                if (jsonStr && jsonStr !== '[DONE]') {
+                    try {
+                        const parsed = JSON.parse(jsonStr);
+                        const normalized = normalizeGeminiChunk(parsed);
+                        for (const t of normalized.textDeltas) fullAnswer += t;
+                        if (normalized.usage?.totalTokens) tokenUsage = normalized.usage.totalTokens;
+                        if (normalized.finishReason) finishReason = normalized.finishReason;
+                        sink.forwardChunk(parsed, normalized, jsonStr);
+                    } catch { /* ignore */ }
+                }
+            }
+            settle(() => resolve({ fullAnswer, tokenUsage, finishReason }));
         });
-        stream.on('error', (err: Error) => { if (!res.writableEnded) res.end(); reject(err); });
+
+        stream.on('error', (err: Error) => {
+            settle(() => reject(err));
+        });
     });
 }
 
-// ─── Unified streaming account rotation ──────────────────
+// ─── Streaming engine: account rotation with sink ────────
 
-async function streamWithAccounts(
-    model: string, contents: any[],
-    generationConfig: any, systemInstruction: any,
-    tools: any[] | undefined, toolConfig: any,
-    res: Response,
-    headersAlreadySent: boolean  // true = admin chat (SSE headers sent before this call)
-): Promise<void> {
+export interface StreamWithSinkOptions {
+    model: string;
+    contents: any[];
+    generationConfig?: any;
+    systemInstruction?: any;
+    tools?: any[];
+    toolConfig?: any;
+    res: Response;
+    sink: StreamSink;
+}
+
+/**
+ * Core streaming engine. Rotates across accounts, tries fallback models on 429,
+ * and pipes the first successful upstream stream through the provided sink.
+ *
+ * Errors are reported via the sink; the engine itself never writes to `res`
+ * directly (apart from issuing a JSON 503 *before* the sink has started).
+ */
+export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise<void> {
+    const { model, contents, generationConfig, systemInstruction, tools, toolConfig, res, sink } = opts;
     const db = getDatabase();
     await updateConcurrencyLimits();
+
+    const requestedModel = model || DEFAULT_MODEL;
+    let sinkStarted = false;
+
+    const reportNoAccounts = () => {
+        // No upstream stream was acquired → we still own the response.
+        if (sink.headersAlreadyWritten || res.headersSent) {
+            // Headers already committed; we cannot send a JSON error. Use the
+            // sink's abort path so it can write a protocol-appropriate event.
+            sink.abortAfterStart(new Error('All Gemini accounts exhausted or failed.'));
+        } else {
+            res.status(503).json({ error: 'All Gemini accounts exhausted or failed.' });
+        }
+    };
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         const accounts = await selectReadyAccounts();
 
         if (accounts.length === 0) {
-            if (!res.headersSent) res.status(503).json({ error: 'All Gemini accounts exhausted or failed.' });
-            else if (!res.writableEnded) { res.write(`data: ${JSON.stringify({ error: 'All accounts exhausted.' })}\n\n`); res.end(); }
+            reportNoAccounts();
             return;
         }
 
@@ -358,13 +472,12 @@ async function streamWithAccounts(
                 else continue;
             }
 
-            // Stagger account attempts to avoid IP-level burst throttling
             if (i > 0) await new Promise(r => setTimeout(r, INTER_ACCOUNT_STAGGER_MS));
 
             try {
                 const token = await ensureFreshToken(account);
                 const requestPayload = buildPayload(contents, generationConfig, systemInstruction, tools, toolConfig);
-                let usedModel = model || DEFAULT_MODEL;
+                let usedModel = requestedModel;
 
                 const geminiBody = (m: string) => ({
                     model: m, project: account.projectId,
@@ -381,7 +494,7 @@ async function streamWithAccounts(
                     const fallback = getFallbackModel(usedModel);
 
                     if (fallback) {
-                        const fbResult = await geminiStreamSemaphore.run(() => 
+                        const fbResult = await geminiStreamSemaphore.run(() =>
                             nativeFetchStream(`${GEMINI_API_BASE}:streamGenerateContent?alt=sse`, {
                                 method: 'POST', headers: buildHeaders(token),
                                 body: JSON.stringify(geminiBody(fallback)),
@@ -390,14 +503,12 @@ async function streamWithAccounts(
 
                         if (fbResult.status === 200) {
                             console.log(`✅ Stream fallback accepted by ${account.email} [${fallback}]`);
-                            // Drain and discard the original 429 stream
+                            // Drain the original 429 stream and switch.
                             stream.resume();
                             stream = fbResult.stream;
                             usedModel = fallback;
                             status = 200;
-                            // Fall through to success handling below
                         } else {
-                            // Drain both streams before continuing
                             await drainStream(fbResult.stream);
                             const errText = await drainStream(stream);
                             const cat = classify429(errText);
@@ -421,42 +532,29 @@ async function streamWithAccounts(
                     continue;
                 }
 
-                // ── Success: pipe stream to client ──
-                if (!headersAlreadySent && !res.headersSent) {
-                    res.writeHead(200, {
-                        'Content-Type': 'text/event-stream',
-                        'Cache-Control': 'no-cache',
-                        'Connection': 'keep-alive',
-                        'X-Accel-Buffering': 'no',
-                    });
-                }
-
-                if (usedModel !== model) {
-                    res.write(`data: ${JSON.stringify({ openGemModelChange: usedModel })}\n\n`);
-                }
+                // ── Success path: hand the stream to the sink ──
+                sink.start(usedModel, requestedModel);
+                sinkStarted = true;
 
                 try {
-                    const { fullAnswer, tokenUsage } = await pipeStream(stream, res, !headersAlreadySent);
+                    const { fullAnswer, tokenUsage, finishReason } = await pipeStream(stream, sink);
                     markAccountSuccess(account.email);
                     await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: tokenUsage });
-                    logRequest(db, account.email, contents, fullAnswer, tokenUsage, true, systemInstruction, usedModel, usedModel !== model);
+                    logRequest(db, account.email, contents, fullAnswer, tokenUsage, true, systemInstruction, usedModel, usedModel !== requestedModel);
+                    sink.finalize({ fullText: fullAnswer, tokenUsage, finishReason });
                     console.log(`✅ Stream fulfilled by ${account.email} [${usedModel}]`);
-                    return; // done
+                    return;
                 } catch (streamErr: any) {
                     console.error(`❌ Stream pipe error for ${account.email}:`, streamErr);
                     const cat = classifyError(streamErr.message || '');
                     markAccountCooldown(account.email, cat);
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
 
-                    // If headers were already sent, the HTTP response is committed.
-                    // Retrying with another account would write to an already-committed response,
-                    // causing a hard disconnect (NetworkError in browser).
-                    // End cleanly instead.
-                    if (res.headersSent) {
-                        if (!res.writableEnded) res.end();
-                        return;
-                    }
-                    continue;
+                    // Once the sink started writing, the response is committed. We
+                    // cannot retry on another account without corrupting the wire
+                    // format. End cleanly via the sink and stop.
+                    sink.abortAfterStart(streamErr);
+                    return;
                 }
 
             } catch (e: any) {
@@ -474,17 +572,11 @@ async function streamWithAccounts(
         }
     }
 
-    if (!res.headersSent) res.status(503).json({ error: 'All Gemini accounts exhausted or failed.' });
-    else if (!res.writableEnded) { res.write(`data: ${JSON.stringify({ error: 'All accounts exhausted.' })}\n\n`); res.end(); }
-}
-
-// ─── Public streaming (proxy) ─────────────────────────────
-
-function handleStreamGenerateContent(
-    req: Request, res: Response, model: string, contents: any[],
-    generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any
-): void {
-    streamWithAccounts(model, contents, generationConfig, systemInstruction, tools, toolConfig, res, false);
+    if (sinkStarted) {
+        sink.abortAfterStart(new Error('All Gemini accounts exhausted or failed.'));
+    } else {
+        reportNoAccounts();
+    }
 }
 
 // ─── Admin chat ───────────────────────────────────────────
@@ -501,7 +593,7 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
         }
         contents.forEach((c: any) => { if (!c.role) c.role = 'user'; });
 
-        // Admin chat sends SSE headers first, then rotates
+        // Admin chat commits SSE headers up-front; the sink must NOT rewrite them.
         res.writeHead(200, {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
@@ -509,9 +601,23 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
             'X-Accel-Buffering': 'no',
         });
 
-        await streamWithAccounts(model, contents, generationConfig, finalSystemInstruction, tools, toolConfig || tool_config, res, true);
+        const sink = new GeminiNativeSink(res, /* headersAlreadyWritten */ true, /* unwrapEnvelope */ false);
+        await streamGeminiWithSink({
+            model,
+            contents,
+            generationConfig,
+            systemInstruction: finalSystemInstruction,
+            tools,
+            toolConfig: toolConfig || tool_config,
+            res,
+            sink,
+        });
     } catch (e: any) {
         console.error('Admin Chat Error:', e);
-        if (!res.headersSent) res.status(500).json({ error: 'Internal Server Error' });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Internal Server Error' });
+        } else if (!res.writableEnded) {
+            safeEnd(res);
+        }
     }
 }

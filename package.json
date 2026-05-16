@@ -1,7 +1,7 @@
 {
   "name": "opengem",
-  "version": "0.3.0",
-  "description": "Free, open-source AI API gateway for Gemini models — educational and research use",
+  "version": "0.3.1",
+  "description": "Free, open-source AI API gateway for Gemini, OpenAI and Anthropic — educational and research use",
   "main": "app.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
@@ -10,13 +10,18 @@
   },
   "keywords": [
     "gemini",
+    "openai",
+    "anthropic",
+    "claude",
     "api-gateway",
     "ai",
     "google",
     "proxy",
     "free-api",
     "load-balancer",
-    "reverse-proxy"
+    "reverse-proxy",
+    "openai-compatible",
+    "anthropic-compatible"
   ],
   "author": "Arif Özgün",
   "license": "MIT",

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-05-16
+
+### Added
+- **OpenAI Chat Completions Compatibility** — New `POST /v1/chat/completions` and `GET /v1/models` endpoints serving the canonical OpenAI wire format. Existing tooling (OpenAI SDKs, LangChain, LlamaIndex, OpenWebUI, Cline, Cursor, etc.) connects out-of-the-box by setting `base_url` to OpenGem. Streaming, tool calling, multimodal images, JSON mode (`response_format`), and `stream_options.include_usage` are fully supported. (`src/controllers/openai.ts`, `src/services/adapters/openai.ts`)
+- **Anthropic Messages API Compatibility** — New `POST /v1/messages` endpoint serving Anthropic's official Messages API wire format with full event-stream protocol support (`message_start` → `content_block_*` → `message_delta` → `message_stop`). Tool use, base64 images, system prompts and `top_k` are all wired through. (`src/controllers/anthropic.ts`, `src/services/adapters/anthropic.ts`)
+- **Pluggable Stream Sink Architecture** — Introduced a `StreamSink` abstraction so that the same multi-account rotation, retry, cooldown and logging engine drives Gemini-native, OpenAI and Anthropic streams without duplication. Each protocol owns only its wire-format-specific writer. (`src/services/streaming.ts`)
+- **Generic `generateContentWithAccounts()`** — Non-streaming engine helper that returns both the unwrapped Gemini response and the model that actually served the request, enabling adapters to preserve the requested model id in client-facing responses. (`src/controllers/chat.ts`)
+- **Transparent Model Aliasing** — Common OpenAI / Anthropic model names (e.g. `gpt-4o`, `gpt-4o-mini`, `claude-3-5-sonnet-latest`, `claude-3-opus-latest`) are routed onto the configured default Gemini model while the requested id is preserved verbatim in every response and stream chunk. Any `gemini-*` id is passed through unchanged. (`src/services/adapters/model-aliases.ts`)
+- **Multi-format API Key Extraction** — `requireApiKey` now accepts every convention used by the supported SDK families: `Authorization: Bearer`, `x-api-key` (Anthropic), `x-goog-api-key` (Gemini), and the `?key=` query string fallback. The same hashed key store and per-IP rate limit (120 req/min) protect every endpoint. (`src/index.ts`)
+- **Protocol-aware Auth Errors** — 401/500 responses are emitted in each protocol's native error envelope (OpenAI: `{error:{message,type,code}}`, Anthropic: `{type:"error",error:{type,message}}`, Gemini: `{error}`) so SDK consumers get the error shape they expect. (`src/index.ts`)
+- **Provider-aware Documentation UI** — The dashboard's Documentation page now showcases all three compatible providers (Gemini / OpenAI / Anthropic) with branded provider cards and dedicated SDK code tabs (OpenAI Python, OpenAI JS, Anthropic Python, Anthropic JS). (`public/index.html`, `public/admin.css`)
+- **API Compatibility Settings Panel** — A new "API Compatibility" card on the Settings page lists the three live endpoints with their authentication conventions and provider icons for quick at-a-glance reference. (`public/index.html`)
+
+### Fixed
+- **Stream Write Safety** — Every SSE write now goes through `safeWrite()`/`safeEnd()` helpers that check `writableEnded`/`destroyed` state before touching the socket, preventing crashes when clients disconnect mid-stream. (`src/services/streaming.ts`)
+- **Double-Resolve Guard in `pipeStream`** — Added a `settled` flag preventing simultaneous resolve/reject when the upstream stream emits `end` and `error` in close succession. (`src/controllers/chat.ts`)
+- **Buffered Tail Chunk Flush** — The streaming pipeline now drains any partial buffered SSE line on `stream.end`, ensuring the very last chunk is never silently dropped. (`src/controllers/chat.ts`)
+- **Mid-Stream Failure Recovery** — When an upstream stream errors after the response has been committed, the responsible sink now writes a protocol-appropriate terminal frame (OpenAI error chunk + `[DONE]`, Anthropic `event: error`, Gemini clean end) instead of leaving the SSE channel half-open. (`src/services/streaming.ts`, `src/services/adapters/*`)
+
+### Changed
+- **`chat.ts` Refactor** — The streaming engine was decoupled from Gemini's wire format and now operates exclusively through the `StreamSink` interface. Behaviour for the existing `/v1beta/...` proxy and admin chat is preserved bit-for-bit; the public surface (`tryGenerateContentWithAccounts`, `handleAdminChat`, `handleGenerateContent`) is unchanged.
+- **README & Project Structure** — Documented the new endpoints, SDK quick-starts (Python + Node.js for OpenAI and Anthropic) and feature coverage matrix; updated the directory tree to include `src/services/adapters/` and `src/services/streaming.ts`.
+- Incremented package version to `0.3.1`.
+
 ## [0.3.0] - 2026-04-22
 
 ### Added

@@ -218,26 +218,77 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
 // Simple in-memory store for PKCE verifiers keyed by state parameter
 const authStates = new Map<string, string>();
 
-// API Key middleware — validates against the active database backend
-const requireApiKey = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+/**
+ * Extract an API key from the request, supporting all four conventions used
+ * by Gemini, OpenAI, and Anthropic SDKs:
+ *   - Authorization: Bearer <key>     (Gemini, OpenAI)
+ *   - x-goog-api-key: <key>           (Gemini)
+ *   - x-api-key: <key>                (Anthropic)
+ *   - ?key=<key>                      (Gemini query string fallback)
+ */
+function extractApiKey(req: express.Request): string | null {
     const authHeader = req.header('authorization');
-    const apiKey = authHeader?.replace('Bearer ', '') || (req.query.key as string) || req.header('x-goog-api-key');
-
-    if (!apiKey) {
-        return res.status(401).json({ error: 'Unauthorized. API Key required.' });
+    if (authHeader) {
+        const match = authHeader.match(/^Bearer\s+(.+)$/i);
+        if (match) return match[1].trim();
     }
+    const goog = req.header('x-goog-api-key');
+    if (goog) return goog.trim();
+    const anthropic = req.header('x-api-key');
+    if (anthropic) return anthropic.trim();
+    if (typeof req.query.key === 'string') return req.query.key;
+    return null;
+}
 
-    try {
-        const isValid = await getDatabase().validateApiKey(apiKey);
-        if (!isValid) {
-            return res.status(401).json({ error: 'Unauthorized. Invalid API Key.' });
+/**
+ * Build a protocol-appropriate 401 / 500 response.
+ * `errorShape` lets each compatibility surface return errors in the format
+ * its SDK expects, instead of leaking the Gemini-shape `{error: "..."}`.
+ */
+function sendAuthError(
+    res: express.Response,
+    status: number,
+    message: string,
+    shape: 'gemini' | 'openai' | 'anthropic',
+): void {
+    if (res.headersSent) return;
+    if (shape === 'openai') {
+        res.status(status).json({
+            error: { message, type: 'invalid_request_error', param: null, code: status === 401 ? 'invalid_api_key' : null },
+        });
+        return;
+    }
+    if (shape === 'anthropic') {
+        res.status(status).json({
+            type: 'error',
+            error: { type: status === 401 ? 'authentication_error' : 'api_error', message },
+        });
+        return;
+    }
+    res.status(status).json({ error: message });
+}
+
+function makeApiKeyMiddleware(shape: 'gemini' | 'openai' | 'anthropic') {
+    return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+        const apiKey = extractApiKey(req);
+        if (!apiKey) {
+            return sendAuthError(res, 401, 'Unauthorized. API Key required.', shape);
         }
-        next();
-    } catch (err) {
-        console.error('API Key validation error:', err);
-        return res.status(500).json({ error: 'Internal Server Error.' });
-    }
-};
+        try {
+            const isValid = await getDatabase().validateApiKey(apiKey);
+            if (!isValid) {
+                return sendAuthError(res, 401, 'Unauthorized. Invalid API Key.', shape);
+            }
+            next();
+        } catch (err) {
+            console.error('API Key validation error:', err);
+            return sendAuthError(res, 500, 'Internal Server Error.', shape);
+        }
+    };
+}
+
+// Backwards-compatible alias used by the existing Gemini proxy route.
+const requireApiKey = makeApiKeyMiddleware('gemini');
 
 // --- AUTH ROUTES ---
 
@@ -483,9 +534,11 @@ app.post('/api/admin/db-switch', requireAdmin, async (req, res) => {
     }
 });
 
-// --- GEMINI PROXY ROUTE ---
+// --- COMPATIBILITY CONTROLLERS ---
 
 import { handleGenerateContent, handleAdminChat } from './controllers/chat';
+import { handleOpenAIChatCompletions, handleOpenAIListModels } from './controllers/openai';
+import { handleAnthropicMessages } from './controllers/anthropic';
 
 // --- MODEL CONFIGURATION ROUTES ---
 
@@ -550,6 +603,25 @@ app.post('/v1beta/models/:model\\::action', apiLimiter, requireApiKey, (req, res
         return handleGenerateContent(req, res);
     }
     return res.status(404).json({ error: 'Not found or unsupported action' });
+});
+
+// --- OPENAI-COMPATIBLE ROUTES ---
+
+const requireApiKeyOpenAI = makeApiKeyMiddleware('openai');
+const requireApiKeyAnthropic = makeApiKeyMiddleware('anthropic');
+
+app.post('/v1/chat/completions', apiLimiter, requireApiKeyOpenAI, (req, res) => {
+    handleOpenAIChatCompletions(req, res);
+});
+
+app.get('/v1/models', requireApiKeyOpenAI, (req, res) => {
+    handleOpenAIListModels(req, res);
+});
+
+// --- ANTHROPIC-COMPATIBLE ROUTES ---
+
+app.post('/v1/messages', apiLimiter, requireApiKeyAnthropic, (req, res) => {
+    handleAnthropicMessages(req, res);
 });
 
 const PORT = process.env.PORT || 3050;

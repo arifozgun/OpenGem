@@ -882,6 +882,205 @@ body {
     color: #60a5fa;
 }
 
+/* === Provider Compatibility Cards === */
+.provider-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.provider-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    transition: box-shadow var(--transition), border-color var(--transition), transform var(--transition);
+}
+
+.provider-card:hover {
+    box-shadow: var(--shadow);
+    border-color: rgba(0, 0, 0, 0.12);
+    transform: translateY(-1px);
+}
+
+.provider-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.provider-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.provider-card-icon img {
+    object-fit: contain;
+    max-width: 24px;
+    max-height: 24px;
+}
+
+.provider-card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+
+.provider-card-subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    font-weight: 500;
+}
+
+.provider-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.provider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.provider-row .doc-method {
+    font-size: 10px;
+    padding: 3px 8px;
+    flex-shrink: 0;
+}
+
+.provider-row code {
+    font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    color: var(--text-primary);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 8px;
+    word-break: break-all;
+}
+
+.provider-card-tag {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    background: var(--green-bg);
+    color: #1b8a36;
+}
+
+.provider-card-tag.tag-blue {
+    background: var(--blue-bg);
+    color: #0063d1;
+}
+
+.provider-card-tag.tag-orange {
+    background: var(--orange-bg);
+    color: #b65c00;
+}
+
+/* === Compatibility list (settings page) === */
+.compat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.compat-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.compat-item-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.compat-item-icon img {
+    object-fit: contain;
+    max-width: 20px;
+    max-height: 20px;
+}
+
+.compat-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.compat-item-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.compat-item-meta {
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.compat-item-meta code {
+    font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 8px;
+    color: var(--text-primary);
+}
+
+.compat-item-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    background: var(--green-bg);
+    color: #1b8a36;
+    flex-shrink: 0;
+}
+
 /* Models Grid */
 .doc-models-grid {
     display: grid;
