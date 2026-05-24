@@ -615,7 +615,8 @@ print(llm.invoke("Hello!").content)</pre>
                     <!-- OpenAI · Python -->
                     <div class="code-panel" data-lang="openai-py">
                         <div class="doc-code-block">
-                            <div class="doc-code-label">pip install openai &nbsp;·&nbsp; OpenAI-compatible endpoint</div>
+                            <div class="doc-code-label">pip install openai &nbsp;·&nbsp; OpenAI-compatible endpoint
+                            </div>
                             <pre>from openai import OpenAI
 
 client = OpenAI(
@@ -639,7 +640,8 @@ for chunk in stream:
                     <!-- OpenAI · JavaScript -->
                     <div class="code-panel" data-lang="openai-js">
                         <div class="doc-code-block">
-                            <div class="doc-code-label">npm install openai &nbsp;·&nbsp; OpenAI-compatible endpoint</div>
+                            <div class="doc-code-label">npm install openai &nbsp;·&nbsp; OpenAI-compatible endpoint
+                            </div>
                             <pre>import OpenAI from "openai";
 
 const client = new OpenAI({
@@ -683,7 +685,8 @@ with client.messages.stream(
                     <!-- Anthropic · JavaScript -->
                     <div class="code-panel" data-lang="anthropic-js">
                         <div class="doc-code-block">
-                            <div class="doc-code-label">npm install @anthropic-ai/sdk &nbsp;·&nbsp; Anthropic Messages API</div>
+                            <div class="doc-code-label">npm install @anthropic-ai/sdk &nbsp;·&nbsp; Anthropic Messages
+                                API</div>
                             <pre>import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({
@@ -719,6 +722,7 @@ for await (const event of stream) {
                             <div class="form-group" style="margin-bottom: 16px;">
                                 <label for="pgModel">Model</label>
                                 <select id="pgModel" class="doc-select">
+                                    <option value="gemini-3.5-flash">gemini-3.5-flash</option>
                                     <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
                                     <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
                                     <option value="gemini-3-pro-preview" selected>gemini-3-pro-preview</option>
@@ -759,6 +763,14 @@ for await (const event of stream) {
                     <p class="doc-section-subtitle">All supported Gemini models and their capabilities.</p>
 
                     <div class="doc-models-grid">
+                        <div class="doc-model-card doc-model-new">
+                            <div class="doc-model-header">
+                                <code>gemini-3.5-flash</code>
+                                <span class="doc-model-badge doc-badge-new">NEW</span>
+                            </div>
+                            <p class="doc-model-desc">Latest Gemini 3.5 generation flash model with improved speed and
+                                quality</p>
+                        </div>
                         <div class="doc-model-card doc-model-new">
                             <div class="doc-model-header">
                                 <code>gemini-3.1-pro-preview</code>
@@ -837,6 +849,7 @@ for await (const event of stream) {
                     <h1>Chat</h1>
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <select id="chatModelSelect" class="chat-model-selector">
+                            <option value="gemini-3.5-flash">gemini-3.5-flash</option>
                             <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
                             <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
                             <option value="gemini-3-pro-preview" selected>gemini-3-pro-preview</option>
@@ -943,7 +956,8 @@ for await (const event of stream) {
                                         <span>Auth: <code>Authorization: Bearer</code></span>
                                     </div>
                                 </div>
-                                <span class="compat-item-badge" style="background: var(--blue-bg); color: #0063d1;">Compatible</span>
+                                <span class="compat-item-badge"
+                                    style="background: var(--blue-bg); color: #0063d1;">Compatible</span>
                             </div>
                             <div class="compat-item">
                                 <div class="compat-item-icon">
@@ -957,7 +971,8 @@ for await (const event of stream) {
                                         <span>Auth: <code>x-api-key</code></span>
                                     </div>
                                 </div>
-                                <span class="compat-item-badge" style="background: var(--orange-bg); color: #b65c00;">Compatible</span>
+                                <span class="compat-item-badge"
+                                    style="background: var(--orange-bg); color: #b65c00;">Compatible</span>
                             </div>
                         </div>
                     </div>
@@ -993,6 +1008,7 @@ for await (const event of stream) {
                             <div class="model-config-item">
                                 <div class="db-status-label">Fallback</div>
                                 <select id="modelFallback" class="chat-model-selector" style="width: 100%;">
+                                    <option value="gemini-3.5-flash">gemini-3.5-flash</option>
                                     <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
                                     <option value="gemini-3-pro-preview">gemini-3-pro-preview</option>
                                     <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
@@ -1004,6 +1020,7 @@ for await (const event of stream) {
                             <div class="model-config-item">
                                 <div class="db-status-label">Fallback V2</div>
                                 <select id="modelFallbackV2" class="chat-model-selector" style="width: 100%;">
+                                    <option value="gemini-3.5-flash">gemini-3.5-flash</option>
                                     <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
                                     <option value="gemini-3-pro-preview">gemini-3-pro-preview</option>
                                     <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
@@ -1017,6 +1034,47 @@ for await (const event of stream) {
                             </div>
                         </div>
                         <div id="modelSaveStatus" style="min-height: 0; transition: min-height 0.2s ease;"></div>
+                    </div>
+                </div>
+
+                <!-- Account Credentials Card -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2>Account Credentials</h2>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;">
+                            Rotate the administrator username and password used to sign in to this dashboard.
+                            The current password is required for re-authentication. After a successful change you
+                            will be signed out and must log in again with the new credentials.
+                        </p>
+                        <form id="credentialsForm" autocomplete="off" style="display: grid; gap: 12px;">
+                            <div class="form-group">
+                                <label for="credCurrentPassword">Current Password</label>
+                                <input type="password" id="credCurrentPassword" autocomplete="current-password"
+                                    placeholder="Enter your current password" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="credNewUsername">New Username</label>
+                                <input type="text" id="credNewUsername" autocomplete="off"
+                                    placeholder="Choose a new username" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="credNewPassword">New Password</label>
+                                <input type="password" id="credNewPassword" autocomplete="new-password"
+                                    placeholder="Min 8 chars, 1 uppercase, 1 lowercase, 1 digit" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="credConfirmPassword">Confirm New Password</label>
+                                <input type="password" id="credConfirmPassword" autocomplete="new-password"
+                                    placeholder="Re-enter the new password" required>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px; justify-content: flex-end;">
+                                <div id="credStatus" style="font-size: 13px; flex: 1; min-height: 18px;"></div>
+                                <button type="submit" class="btn btn-primary" id="saveCredentialsBtn"
+                                    style="white-space: nowrap;">Update Credentials</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
 

@@ -10,7 +10,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { getDatabase, invalidateDbCache } from './services/database';
 import { requireAdmin } from './middleware/auth';
-import { isConfigured, getConfig, saveConfig, generateJwtSecret, generateApiKey, verifyUsername, switchDatabaseBackend, updateModels } from './services/config';
+import { isConfigured, getConfig, saveConfig, generateJwtSecret, generateApiKey, verifyUsername, switchDatabaseBackend, updateModels, updateAdminCredentials } from './services/config';
 import {
     OAUTH_CONFIG,
     generatePkce,
@@ -213,6 +213,63 @@ app.post('/api/admin/logout', (req, res) => {
 
 app.get('/api/admin/me', requireAdmin, (req, res) => {
     res.json({ admin: true });
+});
+
+// --- CREDENTIAL CHANGE ROUTE ---
+//
+// Allows an authenticated admin to rotate username and/or password from the
+// Settings page. The current password is always required as a re-authentication
+// step (defence in depth — a stolen session cookie alone must not be enough
+// to lock the legitimate owner out of their own instance).
+//
+// The same complexity policy enforced at setup time applies here: min 8 chars,
+// at least one uppercase, one lowercase, and one digit. Both new credentials
+// are bcrypt-hashed (cost 12) before they ever leave this handler.
+app.post('/api/admin/credentials', requireAdmin, async (req, res) => {
+    try {
+        const { currentPassword, newUsername, newPassword } = req.body || {};
+
+        if (!currentPassword || typeof currentPassword !== 'string') {
+            return res.status(400).json({ error: 'Current password is required.' });
+        }
+        if (!newUsername || typeof newUsername !== 'string' || !newUsername.trim()) {
+            return res.status(400).json({ error: 'New username is required.' });
+        }
+        if (!newPassword || typeof newPassword !== 'string') {
+            return res.status(400).json({ error: 'New password is required.' });
+        }
+        if (newPassword.length < 8) {
+            return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+        }
+        if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+            return res.status(400).json({ error: 'New password must contain at least one uppercase letter, one lowercase letter, and one digit.' });
+        }
+
+        const admin = getAdminCredentials();
+        const currentValid = await bcrypt.compare(currentPassword, admin.password);
+        if (!currentValid) {
+            return res.status(401).json({ error: 'Current password is incorrect.' });
+        }
+
+        const [hashedUsername, hashedPassword] = await Promise.all([
+            bcrypt.hash(newUsername.trim(), 12),
+            bcrypt.hash(newPassword, 12),
+        ]);
+
+        updateAdminCredentials(hashedUsername, hashedPassword);
+
+        // Invalidate the existing session so the admin must re-authenticate with
+        // the new credentials. The cookie is httpOnly so the client cannot remove
+        // it itself.
+        res.clearCookie('admin_session');
+        res.json({ success: true, message: 'Credentials updated. Please log in again.' });
+    } catch (err: any) {
+        console.error('Credentials change error:', err);
+        const errMsg = process.env.NODE_ENV === 'production'
+            ? 'Failed to update credentials. Please try again.'
+            : 'Failed to update credentials: ' + err.message;
+        res.status(500).json({ error: errMsg });
+    }
 });
 
 // Simple in-memory store for PKCE verifiers keyed by state parameter
@@ -624,11 +681,16 @@ app.post('/v1/messages', apiLimiter, requireApiKeyAnthropic, (req, res) => {
     handleAnthropicMessages(req, res);
 });
 
-const PORT = process.env.PORT || 3050;
+const PORT = Number(process.env.PORT) || 3050;
+// Bind to loopback by default — production deployments behind nginx/Cloudflare
+// should never expose this Node process directly to the public internet.
+// Operators who run OpenGem on the open internet (rare) can opt in by setting
+// HOST=0.0.0.0 explicitly.
+const HOST = process.env.HOST || '127.0.0.1';
 const EXHAUSTION_COOLDOWN_MS = 60 * 60 * 1000; // 60 minutes
 
-app.listen(PORT, async () => {
-    console.log(`🚀 OpenGem running on http://localhost:${PORT}`);
+app.listen(PORT, HOST, async () => {
+    console.log(`🚀 OpenGem running on http://${HOST}:${PORT}`);
 
     if (!isConfigured()) {
         console.log(`⚙️  Setup required! Visit http://localhost:${PORT}/setup to configure.`);

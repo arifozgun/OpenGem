@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-05-24
+
+### Added
+- **Administrator Credential Rotation from Settings** — A new "Account Credentials" card on the Settings page lets an authenticated admin change their username and password without re-running the setup wizard or hand-editing `config.json`. The current password is required for re-authentication, the new password is validated against the same complexity policy used at setup (≥8 chars, 1 uppercase, 1 lowercase, 1 digit), both values are bcrypt-hashed at cost 12 before persistence, and the session cookie is invalidated on success so the operator must sign in again with the new credentials. (`src/index.ts`, `src/services/config.ts`, `public/index.html`, `public/admin.js`)
+- **`updateAdminCredentials()` config helper** — Field-scoped writer that updates only the `admin.username` and `admin.password` entries of `config.json`, refusing to accept anything other than pre-computed bcrypt hashes. Encryption keys, Firebase configuration, model overrides and database backend are left strictly untouched. (`src/services/config.ts`)
+- **`gemini-3.5-flash` Model Support** — Added the newly released `gemini-3.5-flash` model to every model picker in the dashboard (Playground, Chat, Settings → Fallback / Fallback V2) and the public Documentation page's "Available Models" grid. The model is proxied through the same `/v1beta/models/:model:action` route as every other Gemini id, with no new server-side code path required. (`public/index.html`)
+
+### Security
+- **Loopback-Only Default Bind** — The Node.js process now listens on `127.0.0.1:3050` by default instead of `0.0.0.0:3050`. Production deployments fronted by nginx / Cloudflare get an additional defense-in-depth layer: even if the host firewall is misconfigured, the OpenGem process is unreachable from the public internet. Operators who genuinely want a directly-exposed listener can opt back in with `HOST=0.0.0.0`. (`src/index.ts`)
+
+### Changed
+- Incremented package version to `0.3.2`.
+
 ## [0.3.1] - 2026-05-16
 
 ### Added

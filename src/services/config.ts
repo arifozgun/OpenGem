@@ -362,3 +362,25 @@ export async function verifyUsername(plaintext: string, hash: string): Promise<b
     }
     return bcrypt.compare(plaintext, hash);
 }
+
+/**
+ * Updates the admin username and/or password in config.json, preserving all
+ * other fields (firebase, jwtSecret, models, dbBackend, ...) intact.
+ *
+ * Both values are already-hashed bcrypt strings produced by the caller.
+ * The caller is responsible for verifying the current password before invoking
+ * this function. Plaintext credentials must never reach this layer.
+ */
+export function updateAdminCredentials(hashedUsername: string, hashedPassword: string): void {
+    if (!fs.existsSync(CONFIG_PATH)) {
+        throw new Error('Config not found.');
+    }
+    if (!isBcryptHash(hashedUsername) || !isBcryptHash(hashedPassword)) {
+        throw new Error('updateAdminCredentials expects bcrypt hashes, not plaintext.');
+    }
+    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+    raw.admin = raw.admin || {};
+    raw.admin.username = hashedUsername;
+    raw.admin.password = hashedPassword;
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2), 'utf-8');
+}

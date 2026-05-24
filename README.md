@@ -5,11 +5,11 @@
   <img alt="OpenGem Logo" src="public/logos/black.png" height="120">
 </picture>
 
-# OpenGem 0.3.1
+# OpenGem 0.3.2
 
 **Free, Open-Source AI API Gateway with Gemini, OpenAI & Anthropic Compatibility**
 
-[![Version](https://img.shields.io/badge/Version-0.3.1-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
+[![Version](https://img.shields.io/badge/Version-0.3.2-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://typescriptlang.org)
@@ -385,7 +385,7 @@ After completing the initial setup, access the administrative panel at `http://l
 | **Accounts** | Connect new Google accounts via secure OAuth, automatically detect Pro status, monitor current status, and manually reactivate if necessary. |
 | **API Keys** | Issue new API keys, revoke existing ones, and monitor individual key bandwidth utilization. |
 | **Chat** | Interactive playground supporting Gemini 3 Pro thought processes, customizable system instructions, and real-time Markdown streaming. |
-| **Settings** | Toggle between Firebase and Local JSON database solutions on the fly without losing request logs or account data. |
+| **Settings** | Toggle between Firebase and Local JSON database solutions on the fly, rotate administrator credentials, and tune fallback models without losing request logs or account data. |
 | **Logs** | Access comprehensive chronological histories detailing requests, generated completions, formatted tool calls (`functionCall`/`functionResponse`), and token calculations. |
 
 ### Connecting Google Accounts

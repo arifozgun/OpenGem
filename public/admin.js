@@ -232,6 +232,74 @@ async function loadSettings() {
         saveModelsBtn._listenerAdded = true;
         saveModelsBtn.addEventListener('click', saveModels);
     }
+
+    // Credentials change form
+    const credForm = document.getElementById('credentialsForm');
+    if (credForm && !credForm._listenerAdded) {
+        credForm._listenerAdded = true;
+        credForm.addEventListener('submit', handleCredentialsSubmit);
+    }
+}
+
+async function handleCredentialsSubmit(e) {
+    e.preventDefault();
+    const statusEl = document.getElementById('credStatus');
+    const submitBtn = document.getElementById('saveCredentialsBtn');
+    const currentPasswordEl = document.getElementById('credCurrentPassword');
+    const newUsernameEl = document.getElementById('credNewUsername');
+    const newPasswordEl = document.getElementById('credNewPassword');
+    const confirmPasswordEl = document.getElementById('credConfirmPassword');
+
+    const currentPassword = currentPasswordEl?.value || '';
+    const newUsername = newUsernameEl?.value.trim() || '';
+    const newPassword = newPasswordEl?.value || '';
+    const confirmPassword = confirmPasswordEl?.value || '';
+
+    function showStatus(msg, isError) {
+        if (!statusEl) return;
+        statusEl.textContent = msg;
+        statusEl.style.color = isError ? 'var(--red)' : 'var(--green, #14803c)';
+    }
+
+    if (!currentPassword || !newUsername || !newPassword) {
+        showStatus('All fields are required.', true);
+        return;
+    }
+    if (newPassword !== confirmPassword) {
+        showStatus('New password and confirmation do not match.', true);
+        return;
+    }
+    if (newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+        showStatus('Password must be \u22658 chars with 1 uppercase, 1 lowercase and 1 digit.', true);
+        return;
+    }
+
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving...'; }
+    showStatus('', false);
+
+    try {
+        const res = await fetch('/api/admin/credentials', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ currentPassword, newUsername, newPassword })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+            showStatus('Updated. Redirecting to login...', false);
+            // Clear inputs immediately so the new credentials never linger in the DOM.
+            if (currentPasswordEl) currentPasswordEl.value = '';
+            if (newUsernameEl) newUsernameEl.value = '';
+            if (newPasswordEl) newPasswordEl.value = '';
+            if (confirmPasswordEl) confirmPasswordEl.value = '';
+            setTimeout(() => { window.location.reload(); }, 1200);
+        } else {
+            showStatus(data.error || 'Update failed.', true);
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Update Credentials'; }
+        }
+    } catch (err) {
+        showStatus('Network error. Please try again.', true);
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Update Credentials'; }
+    }
 }
 
 async function saveModels() {
