@@ -1,6 +1,6 @@
 /**
  * IDatabase — abstract interface for all database backends.
- * Both Firebase Firestore and the local JSON file backend implement this.
+ * Both Firebase Firestore and the local SQLite backend (node:sqlite, Node 22.5+) implement this.
  */
 
 export interface RequestLog {
@@ -98,7 +98,7 @@ export function getDatabase(): IDatabase {
     const { getConfig, isConfigured } = require('./config');
 
     if (!isConfigured()) {
-        // During setup, return a no-op stub or local db by default
+        // During setup, default to the local SQLite backend
         return getLocalDb();
     }
 
@@ -125,8 +125,10 @@ export function invalidateDbCache(): void {
 }
 
 function getLocalDb(): IDatabase {
-    const { localDb } = require('./localDb');
-    return localDb;
+    // The 'local' backend is now SQLite (node:sqlite, Node 22.5+ built-in).
+    // The legacy JSON-file `localDb` is auto-migrated on first SQLite init.
+    const { sqliteDb } = require('./sqliteDb');
+    return sqliteDb;
 }
 
 function getFirebaseDb(): IDatabase {

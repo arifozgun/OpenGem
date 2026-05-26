@@ -19,11 +19,6 @@ const AUTH_TAG_LENGTH = 16; // 128-bit auth tag
 
 // --- Types ---
 
-export interface ModelConfig {
-    fallback: string;
-    fallbackV2: string;
-}
-
 export interface AppConfig {
     firebase?: {
         apiKey: string;
@@ -43,8 +38,6 @@ export interface AppConfig {
     setupCompletedAt?: string;
     /** Which database backend to use. Defaults to 'firebase' for backward compat. */
     dbBackend?: 'firebase' | 'local';
-    /** Custom model configuration. Uses hardcoded defaults if absent. */
-    models?: ModelConfig;
 }
 
 // The raw JSON shape on disk (encrypted values are strings)
@@ -66,7 +59,6 @@ interface EncryptedConfig {
     setupCompleted: boolean;
     setupCompletedAt?: string;
     dbBackend?: 'firebase' | 'local';
-    models?: ModelConfig;
 }
 
 // --- Encryption Key Management ---
@@ -106,6 +98,12 @@ function getEncryptionKey(): Buffer {
 // --- AES-256-GCM Encryption / Decryption ---
 
 export function encrypt(plaintext: string): string {
+    if (!plaintext || typeof plaintext !== 'string') {
+        return '';
+    }
+    if (plaintext.startsWith(ENCRYPTION_PREFIX)) {
+        return plaintext;
+    }
     const key = getEncryptionKey();
     const iv = crypto.randomBytes(IV_LENGTH);
     const cipher = crypto.createCipheriv(AES_ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
@@ -120,6 +118,9 @@ export function encrypt(plaintext: string): string {
 }
 
 export function decrypt(encryptedValue: string): string {
+    if (!encryptedValue || typeof encryptedValue !== 'string') {
+        return '';
+    }
     if (!encryptedValue.startsWith(ENCRYPTION_PREFIX)) {
         // Not encrypted — return as-is (for backward compatibility / migration)
         return encryptedValue;
@@ -222,7 +223,6 @@ export function getConfig(): AppConfig {
         setupCompleted: encrypted.setupCompleted,
         setupCompletedAt: encrypted.setupCompletedAt,
         dbBackend,
-        models: encrypted.models,
     };
 
     // Auto-migrate plaintext config to encrypted format
@@ -259,7 +259,6 @@ async function migrateConfig(raw: EncryptedConfig): Promise<void> {
             setupCompleted: raw.setupCompleted,
             setupCompletedAt: raw.setupCompletedAt,
             dbBackend: raw.dbBackend || 'firebase',
-            models: raw.models,
         };
 
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(encryptedConfig, null, 2), 'utf-8');
@@ -292,7 +291,6 @@ export function saveConfig(config: AppConfig): void {
         setupCompleted: config.setupCompleted,
         setupCompletedAt: config.setupCompletedAt,
         dbBackend: config.dbBackend || 'firebase',
-        models: config.models,
     };
 
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(encryptedConfig, null, 2), 'utf-8');
@@ -343,17 +341,7 @@ export function generateApiKey(): string {
 /**
  * Verifies a plaintext username against the stored bcrypt hash.
  */
-/**
- * Updates only the models field in config.json without touching any other values.
- */
-export function updateModels(models: ModelConfig): void {
-    if (!fs.existsSync(CONFIG_PATH)) {
-        throw new Error('Config not found.');
-    }
-    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-    raw.models = models;
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2), 'utf-8');
-}
+
 
 export async function verifyUsername(plaintext: string, hash: string): Promise<boolean> {
     if (!isBcryptHash(hash)) {

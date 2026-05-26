@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-26
+
+### Added
+- **Next.js Admin Console** — Replaced the legacy hand-written HTML/CSS/JS frontend with a Next.js App Router static export styled after the `tygoyemek` panel. The new console covers login, overview, accounts, API keys, logs, documentation, playground, chat, settings and setup. (`app/`, `components/ui/`, `lib/`, `next.config.mjs`, `postcss.config.mjs`)
+- **New Setup Wizard** — Rebuilt setup as a React route with the same backend choices, Firebase JSON paste support and admin credential validation as before. (`app/setup/`)
+- **SQLite Local Backend (`node:sqlite`)** — Replaced the legacy JSON-file local database with SQLite using Node.js' native `node:sqlite` module. Existing `data/db.json` files are migrated once and renamed to `db.json.bak`. (`src/services/sqliteDb.ts`, `src/services/database.ts`)
+- **Node 22.5 engine constraint** — Declared `engines.node >= 22.5.0` because the local backend uses built-in SQLite. (`package.json`)
+- **Antigravity CLI (`agy`) Migration** — OAuth token acquisition and refresh now use credentials extracted from Antigravity CLI instead of the legacy Gemini CLI flow. (`src/services/antigravity.ts`)
+- **Antigravity CLI User-Agent** — Upstream requests now use the `antigravity/1.0.2` CLI-style user-agent headers. (`src/controllers/chat.ts`)
+
+### Removed
+- **Legacy `public/` frontend** — Removed `public/index.html`, `public/setup.html`, `public/admin.css`, `public/setup.css`, `public/admin.js`, `public/setup.js` and then removed the `public/` directory entirely. UI assets now live under `app/assets/` and are imported by Next.
+- **Legacy JSON-file `localDb.ts`** — Superseded by `sqliteDb.ts`. Existing JSON databases still auto-migrate on first run.
+- **Legacy Fallback Models** — Removed the obsolete model fallback rotation chain and related model configuration UI. On 429, OpenGem cools down the account and rotates to another account. (`src/controllers/chat.ts`, `src/services/adapters/model-aliases.ts`, `src/index.ts`, `src/services/config.ts`)
+
+### Changed
+- **Express Static Serving** — The server now serves the built Next export from `out/`, supports clean dashboard routes (`/`, `/accounts`, `/keys`, `/logs`, `/docs`, `/chat`, `/settings`, `/setup`) and provides `/robots.txt` directly from Express. (`src/index.ts`)
+- **Build Pipeline** — Split TypeScript configs so backend compilation uses `tsconfig.server.json`, while Next uses `tsconfig.json`. `npm run build` now runs both backend and frontend builds. (`package.json`, `tsconfig.json`, `tsconfig.server.json`)
+- **README** — Rewrote the README to be shorter, clearer and current with the Next.js UI, SQLite backend and removed `public/` frontend. (`README.md`)
+- **Service Name Update** — Renamed `gemini.ts` to `antigravity.ts` to reflect the toolchain platform rename. (`src/services/antigravity.ts`)
+- **Setup Wizard / Settings Wording** — Local storage is now consistently described as "Local SQLite (`data/db.sqlite`)" instead of the old JSON-file backend.
+
+### Fixed
+- **Admin Chat Friendly Model Names** — Dashboard chat and native `/v1beta/models/:model:action` now route friendly model ids through `resolveCompatibilityModel()`, mapping names such as `gemini-3.5-flash`, `gemini-3.1-pro-preview`, `gemini-3-flash-preview` and `gemini-3-pro-preview` to valid Antigravity slugs. (`src/controllers/chat.ts`)
+- **Local DB Request Logs** — Fixed the old local backend behaviour where log rows could show `undefined`, `—` or incorrect error previews because core fields were dropped. The SQLite implementation returns full log records consistently.
+- Incremented package version to `0.5.0`.
+
 ## [0.3.2] - 2026-05-24
 
 ### Added

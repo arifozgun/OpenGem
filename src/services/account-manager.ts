@@ -9,7 +9,7 @@
  */
 
 import { getDatabase } from './database';
-import { refreshAccessToken } from './gemini';
+import { refreshAccessToken } from './antigravity';
 import type { Account } from './database';
 
 const CACHE_TTL_MS = 5_000; // Re-fetch accounts from DB at most once every 5 s

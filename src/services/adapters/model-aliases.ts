@@ -6,25 +6,62 @@
  * Gemini model. Clients still see the model id they requested in every
  * response (including streaming chunks) — this is purely an internal mapping.
  *
- * Any model id starting with `gemini-` is passed through untouched so callers
- * can still target a specific Gemini model by name.
+ * Public Gemini ids and OpenGem-friendly aliases are normalized to the
+ * Antigravity slug that the upstream endpoint actually accepts.
  */
 
 import {
     DEFAULT_MODEL,
-    getFirstFallbackModel,
-    getSecondFallbackModel,
-} from '../gemini';
+} from '../antigravity';
 
 /**
  * Returns the Gemini model id that should actually serve the request.
  * - Empty / falsy → DEFAULT_MODEL
- * - `gemini-...`  → passthrough (case-insensitive prefix match)
- * - everything else → DEFAULT_MODEL
+ * - known Gemini/OpenGem aliases → supported Antigravity slug
+ * - unknown Gemini ids and everything else → DEFAULT_MODEL
  */
 export function resolveCompatibilityModel(requested: string | undefined | null): string {
     if (!requested || typeof requested !== 'string') return DEFAULT_MODEL;
-    if (requested.toLowerCase().startsWith('gemini-')) return requested;
+    
+    const lower = requested.toLowerCase();
+    
+    // 1. Exact matches for the 5 supported Antigravity slugs
+    if (lower === 'gemini-3-flash-agent') return 'gemini-3-flash-agent';
+    if (lower === 'gemini-3-flash') return 'gemini-3-flash';
+    if (lower === 'gemini-pro-agent') return 'gemini-pro-agent';
+    if (lower === 'gemini-3.5-flash-low') return 'gemini-3.5-flash-low';
+    if (lower === 'gemini-3.1-flash-lite') return 'gemini-3.1-flash-lite';
+    
+    // 2. Map Gemini 3 / 3.5 friendly names
+    if (lower === 'gemini-3.5-flash' || lower === 'gemini-3.5-flash-preview') {
+        return 'gemini-3-flash-agent'; // Gemini 3.5 Flash (High)
+    }
+    if (lower === 'gemini-3-flash-preview') {
+        return 'gemini-3-flash'; // Gemini 3 Flash
+    }
+    if (lower === 'gemini-3-pro-preview' || lower === 'gemini-3.1-pro-preview' || lower === 'gemini-3.5-pro' || lower === 'gemini-3.5-pro-preview' || lower === 'gemini-3-pro') {
+        return 'gemini-pro-agent'; // Gemini 3.1 Pro (High)
+    }
+    
+    // 3. Prevent any 2.5 or older/other legacy models from being used, mapping them to 3x equivalents.
+    // Pro models -> gemini-pro-agent (Gemini 3.1 Pro High)
+    if (lower.includes('pro')) {
+        return 'gemini-pro-agent';
+    }
+    // Flash Lite/8B models -> gemini-3.1-flash-lite (Gemini 3.1 Flash Lite)
+    if (lower.includes('flash-lite') || lower.includes('lite') || lower.includes('8b')) {
+        return 'gemini-3.1-flash-lite';
+    }
+    // Flash models -> gemini-3-flash-agent (Gemini 3.5 Flash High)
+    if (lower.includes('flash')) {
+        return 'gemini-3-flash-agent';
+    }
+    
+    // 4. Default fallback for any other gemini- or general requests
+    if (lower.startsWith('gemini-')) {
+        return DEFAULT_MODEL;
+    }
+    
     return DEFAULT_MODEL;
 }
 
@@ -39,10 +76,19 @@ export function listCompatibilityModelIds(): string[] {
         if (id && !seen.has(id)) seen.add(id);
     };
 
-    // Native Gemini ids (default + configured fallbacks)
+    // User-friendly Gemini 3x model names
+    push('gemini-3.5-flash');
+    push('gemini-3-flash-preview');
+    push('gemini-3.1-pro-preview');
+    push('gemini-3-pro-preview');
+    push('gemini-3.1-flash-lite');
+
+    // Native Antigravity/Gemini slugs
     push(DEFAULT_MODEL);
-    push(getFirstFallbackModel());
-    push(getSecondFallbackModel());
+    push('gemini-3-flash');
+    push('gemini-pro-agent');
+    push('gemini-3.5-flash-low');
+    push('gemini-3.1-flash-lite');
 
     // Common OpenAI aliases
     push('gpt-4o');

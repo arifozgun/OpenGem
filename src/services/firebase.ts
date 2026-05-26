@@ -67,6 +67,30 @@ function sanitize(obj: Record<string, any>): Record<string, any> {
 }
 
 // Re-export types for any existing code that imported from firebase.ts
+function toDate(val: any): Date | undefined {
+    if (!val) return undefined;
+    if (typeof val.toDate === 'function') {
+        return val.toDate();
+    }
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? undefined : d;
+}
+
+function mapDocToAccount(doc: any): Account {
+    const data = doc.data();
+    return {
+        ...data,
+        id: doc.id,
+        accessToken: data.accessToken ? decrypt(data.accessToken) : '',
+        refreshToken: data.refreshToken ? decrypt(data.refreshToken) : '',
+        expiresAt: toDate(data.expiresAt) || new Date(0),
+        lastUsedAt: toDate(data.lastUsedAt) || new Date(0),
+        exhaustedAt: toDate(data.exhaustedAt),
+        createdAt: toDate(data.createdAt),
+        updatedAt: toDate(data.updatedAt)
+    } as Account;
+}
+
 export type { Account, ApiKey, RequestLog, DbStats };
 
 export const firebaseDb: IDatabase = {
@@ -81,15 +105,7 @@ export const firebaseDb: IDatabase = {
         const accounts: Account[] = [];
 
         snapshot.forEach(doc => {
-            const data = doc.data();
-            accounts.push({
-                ...data,
-                id: doc.id,
-                accessToken: decrypt(data.accessToken),
-                refreshToken: decrypt(data.refreshToken),
-                expiresAt: data.expiresAt?.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt),
-                lastUsedAt: data.lastUsedAt?.toDate ? data.lastUsedAt.toDate() : new Date(data.lastUsedAt)
-            } as Account);
+            accounts.push(mapDocToAccount(doc));
         });
 
         // Sort by least recently used (ascending priority)
@@ -102,12 +118,7 @@ export const firebaseDb: IDatabase = {
         const accounts: Account[] = [];
 
         snapshot.forEach(doc => {
-            const data = doc.data();
-            accounts.push({
-                ...data,
-                id: doc.id,
-                lastUsedAt: data.lastUsedAt?.toDate ? data.lastUsedAt.toDate() : new Date(data.lastUsedAt)
-            } as Account);
+            accounts.push(mapDocToAccount(doc));
         });
 
         return accounts.sort((a, b) => new Date(a.lastUsedAt).getTime() - new Date(b.lastUsedAt).getTime());

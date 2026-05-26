@@ -2,7 +2,7 @@ import { StringDecoder } from 'string_decoder';
 import { Request, Response } from 'express';
 import { getDatabase } from '../services/database';
 import { nativeFetch, nativeFetchStream } from '../services/http';
-import { GEMINI_API_BASE, DEFAULT_MODEL, getFirstFallbackModel, getSecondFallbackModel } from '../services/gemini';
+import { GEMINI_API_BASE, DEFAULT_MODEL } from '../services/antigravity';
 import { accountRateLimiter } from '../services/rate-limiter';
 import { classifyError } from '../services/error-classifier';
 import {
@@ -22,6 +22,7 @@ import {
     safeEnd,
     safeWrite,
 } from '../services/streaming';
+import { resolveCompatibilityModel } from '../services/adapters/model-aliases';
 
 // ─── Constants ────────────────────────────────────────────
 
@@ -55,19 +56,8 @@ function classify429(text: string): 'quota' | 'rate_limit' {
     return (cat === 'quota' || cat === 'auth' || cat === 'billing') ? 'quota' : 'rate_limit';
 }
 
-/** Returns the next model to try after a 429:
- *  primary → fallback → fallbackV2 → null (no more fallbacks)
- */
-function getFallbackModel(current: string): string | null {
-    const fb1 = getFirstFallbackModel();
-    const fb2 = getSecondFallbackModel();
-    if (current === fb2) return null;   // Already on last resort
-    if (current === fb1) return fb2;    // fallback → fallbackV2
-    return fb1;                          // primary → fallback
-}
-
 function resolveModel(model: string): string {
-    return model || DEFAULT_MODEL;
+    return resolveCompatibilityModel(model || DEFAULT_MODEL);
 }
 
 function buildHeaders(token: string) {
@@ -75,7 +65,7 @@ function buildHeaders(token: string) {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
         'X-Goog-Api-Client': 'gl-node/openclaw',
-        'User-Agent': 'GeminiCLI/0.26.0 (darwin; arm64)',
+        'User-Agent': 'antigravity/1.0.2 (darwin; arm64)',
     };
 }
 
@@ -150,6 +140,7 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
     try {
         const { contents, generationConfig, systemInstruction, system_instruction, tools, toolConfig, tool_config } = req.body;
         const finalSystemInstruction = systemInstruction || system_instruction;
+        const requestedModelLabel = (req.params.model as string) || DEFAULT_MODEL;
         const model = resolveModel(req.params.model as string);
 
         if (!contents || !Array.isArray(contents)) {
@@ -170,11 +161,12 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
                 toolConfig: finalToolConfig,
                 res,
                 sink,
+                logModel: requestedModelLabel,
             });
             return;
         }
 
-        const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, finalSystemInstruction, tools, finalToolConfig);
+        const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, finalSystemInstruction, tools, finalToolConfig, requestedModelLabel);
         if (!result) { res.status(503).json({ error: 'All Gemini accounts exhausted or failed.' }); return; }
         res.json(result);
     } catch (e: any) {
@@ -207,7 +199,9 @@ export async function generateContentWithAccounts(
     systemInstruction?: any,
     tools?: any[],
     toolConfig?: any,
+    logModel?: string,
 ): Promise<GeminiNonStreamResult | null> {
+    const modelForLog = logModel || model;
     const db = getDatabase();
     await updateConcurrencyLimits();
 
@@ -249,33 +243,11 @@ export async function generateContentWithAccounts(
                 );
 
                 if (response.status === 429) {
-                    const fallback = getFallbackModel(usedModel);
-                    if (fallback) {
-                        console.warn(`⏳ ${account.email} 429 on ${usedModel} — trying ${fallback}...`);
-                        const fbResp = await nativeFetch(`${GEMINI_API_BASE}:generateContent`, {
-                            method: 'POST', headers: buildHeaders(token),
-                            body: JSON.stringify(geminiBody(fallback)),
-                            timeoutMs: GENERATE_CONTENT_TIMEOUT_MS,
-                        });
-                        if (fbResp.ok) {
-                            const data = await fbResp.json() as any;
-                            const text = extractText(data.response?.candidates?.[0]);
-                            const tokens = data.usageMetadata?.totalTokenCount || data.response?.usageMetadata?.totalTokenCount || 0;
-                            if (text || data.response?.candidates?.[0]) {
-                                markAccountSuccess(account.email);
-                                await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens });
-                                logRequest(db, account.email, contents, text, tokens, true, systemInstruction, fallback, true);
-                                console.log(`✅ Fallback fulfilled by ${account.email} [${fallback}]`);
-                                return { response: data.response, usedModel: fallback };
-                            }
-                        }
-                    }
-
                     let errCategory: 'quota' | 'rate_limit' = 'rate_limit';
                     try { errCategory = classify429(await response.text()); } catch { /* ignore */ }
                     markAccountCooldown(account.email, errCategory === 'quota' ? 'quota' : 'rate_limit');
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                    logRequest(db, account.email, contents, `ERROR 429: ${errCategory} cooldown`, 0, false, systemInstruction, usedModel, false);
+                    logRequest(db, account.email, contents, `ERROR 429: ${errCategory} cooldown`, 0, false, systemInstruction, modelForLog, false);
                     continue;
                 }
 
@@ -283,7 +255,7 @@ export async function generateContentWithAccounts(
                     const text = await response.text();
                     console.error(`❌ API error ${response.status} for ${account.email}: ${text}`);
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                    logRequest(db, account.email, contents, `ERROR ${response.status}: ${text.substring(0, 100)}`, 0, false, systemInstruction, usedModel, false);
+                    logRequest(db, account.email, contents, `ERROR ${response.status}: ${text.substring(0, 100)}`, 0, false, systemInstruction, modelForLog, false);
                     continue;
                 }
 
@@ -293,7 +265,7 @@ export async function generateContentWithAccounts(
                 if (data.response?.candidates?.[0]) {
                     markAccountSuccess(account.email);
                     await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens });
-                    logRequest(db, account.email, contents, text, tokens, true, systemInstruction, usedModel, false);
+                    logRequest(db, account.email, contents, text, tokens, true, systemInstruction, modelForLog, false);
                     console.log(`✅ Fulfilled by ${account.email}`);
                     return { response: data.response, usedModel };
                 }
@@ -302,7 +274,7 @@ export async function generateContentWithAccounts(
                 const cat = classifyError(e.message || '');
                 markAccountCooldown(account.email, cat);
                 await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                logRequest(db, account.email, contents, `ERROR: ${e.message?.substring(0, 100) || 'Network Error'}`, 0, false, systemInstruction, model || DEFAULT_MODEL, false);
+                logRequest(db, account.email, contents, `ERROR: ${e.message?.substring(0, 100) || 'Network Error'}`, 0, false, systemInstruction, modelForLog, false);
             }
         }
 
@@ -318,9 +290,9 @@ export async function generateContentWithAccounts(
 /** Legacy signature kept for backward compatibility — returns `data.response` only. */
 export async function tryGenerateContentWithAccounts(
     model: string, contents: any[],
-    generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any
+    generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any, logModel?: string
 ): Promise<any | null> {
-    const result = await generateContentWithAccounts(model, contents, generationConfig, systemInstruction, tools, toolConfig);
+    const result = await generateContentWithAccounts(model, contents, generationConfig, systemInstruction, tools, toolConfig, logModel);
     return result ? result.response : null;
 }
 
@@ -428,6 +400,8 @@ export interface StreamWithSinkOptions {
     toolConfig?: any;
     res: Response;
     sink: StreamSink;
+    /** Client-facing model label to record in request logs (overrides upstream slug). */
+    logModel?: string;
 }
 
 /**
@@ -438,7 +412,8 @@ export interface StreamWithSinkOptions {
  * directly (apart from issuing a JSON 503 *before* the sink has started).
  */
 export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise<void> {
-    const { model, contents, generationConfig, systemInstruction, tools, toolConfig, res, sink } = opts;
+    const { model, contents, generationConfig, systemInstruction, tools, toolConfig, res, sink, logModel } = opts;
+    const modelForLog = logModel || model || DEFAULT_MODEL;
     const db = getDatabase();
     await updateConcurrencyLimits();
 
@@ -490,39 +465,11 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
                 }));
 
                 if (status === 429) {
-                    console.warn(`⏳ Stream: ${account.email} 429 on ${usedModel} — trying fallback...`);
-                    const fallback = getFallbackModel(usedModel);
-
-                    if (fallback) {
-                        const fbResult = await geminiStreamSemaphore.run(() =>
-                            nativeFetchStream(`${GEMINI_API_BASE}:streamGenerateContent?alt=sse`, {
-                                method: 'POST', headers: buildHeaders(token),
-                                body: JSON.stringify(geminiBody(fallback)),
-                            })
-                        );
-
-                        if (fbResult.status === 200) {
-                            console.log(`✅ Stream fallback accepted by ${account.email} [${fallback}]`);
-                            // Drain the original 429 stream and switch.
-                            stream.resume();
-                            stream = fbResult.stream;
-                            usedModel = fallback;
-                            status = 200;
-                        } else {
-                            await drainStream(fbResult.stream);
-                            const errText = await drainStream(stream);
-                            const cat = classify429(errText);
-                            markAccountCooldown(account.email, cat === 'quota' ? 'quota' : 'rate_limit');
-                            await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                            continue;
-                        }
-                    } else {
-                        const errText = await drainStream(stream);
-                        const cat = classify429(errText);
-                        markAccountCooldown(account.email, cat === 'quota' ? 'quota' : 'rate_limit');
-                        await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                        continue;
-                    }
+                    const errText = await drainStream(stream);
+                    const cat = classify429(errText);
+                    markAccountCooldown(account.email, cat === 'quota' ? 'quota' : 'rate_limit');
+                    await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
+                    continue;
                 }
 
                 if (status < 200 || status >= 300) {
@@ -540,7 +487,7 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
                     const { fullAnswer, tokenUsage, finishReason } = await pipeStream(stream, sink);
                     markAccountSuccess(account.email);
                     await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: tokenUsage });
-                    logRequest(db, account.email, contents, fullAnswer, tokenUsage, true, systemInstruction, usedModel, usedModel !== requestedModel);
+                    logRequest(db, account.email, contents, fullAnswer, tokenUsage, true, systemInstruction, modelForLog, usedModel !== requestedModel);
                     sink.finalize({ fullText: fullAnswer, tokenUsage, finishReason });
                     console.log(`✅ Stream fulfilled by ${account.email} [${usedModel}]`);
                     return;
@@ -585,7 +532,7 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
     try {
         const { contents, model: reqModel, generationConfig, systemInstruction, system_instruction, tools, toolConfig, tool_config } = req.body;
         const finalSystemInstruction = systemInstruction || system_instruction;
-        const model = resolveModel(reqModel || DEFAULT_MODEL);
+        const model = resolveCompatibilityModel(reqModel || DEFAULT_MODEL);
 
         if (!contents || !Array.isArray(contents)) {
             res.status(400).json({ error: 'Invalid contents payload' });

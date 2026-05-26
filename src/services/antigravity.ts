@@ -3,44 +3,18 @@ import crypto from 'crypto';
 import { nativeFetch } from './http';
 import { isConfigured, getConfig } from './config';
 
-export const GEMINI_CLI_CREDENTIALS = {
-    clientId: '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com',
-    clientSecret: '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'
+export const ANTIGRAVITY_CLI_CREDENTIALS = {
+    clientId: '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com',
+    clientSecret: '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'
 };
 
 const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 export const GEMINI_API_BASE = `${CODE_ASSIST_ENDPOINT}/v1internal`;
-export const DEFAULT_MODEL = 'gemini-3-flash-preview';      // Primary model (hardcoded default)
-export const FALLBACK_MODEL = 'gemini-3-pro-preview';        // First fallback (hardcoded default)
-export const FALLBACK_MODEL_V2 = 'gemini-3.1-pro-preview';  // Second fallback (hardcoded default)
-
-// --- Dynamic model getters (read from config, fallback to hardcoded defaults) ---
-
-
-
-export function getFirstFallbackModel(): string {
-    try {
-        if (isConfigured()) {
-            const config = getConfig();
-            if (config.models?.fallback) return config.models.fallback;
-        }
-    } catch { /* fallback to default */ }
-    return FALLBACK_MODEL;
-}
-
-export function getSecondFallbackModel(): string {
-    try {
-        if (isConfigured()) {
-            const config = getConfig();
-            if (config.models?.fallbackV2) return config.models.fallbackV2;
-        }
-    } catch { /* fallback to default */ }
-    return FALLBACK_MODEL_V2;
-}
+export const DEFAULT_MODEL = 'gemini-3-flash-agent';      // Primary model (hardcoded default)
 
 export const OAUTH_CONFIG = {
-    clientId: GEMINI_CLI_CREDENTIALS.clientId,
-    clientSecret: GEMINI_CLI_CREDENTIALS.clientSecret,
+    clientId: ANTIGRAVITY_CLI_CREDENTIALS.clientId,
+    clientSecret: ANTIGRAVITY_CLI_CREDENTIALS.clientSecret,
     redirectUri: process.env.OAUTH_REDIRECT_URI || 'http://127.0.0.1:3050/api/auth/callback',
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',

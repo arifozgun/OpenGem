@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
@@ -10,7 +11,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { getDatabase, invalidateDbCache } from './services/database';
 import { requireAdmin } from './middleware/auth';
-import { isConfigured, getConfig, saveConfig, generateJwtSecret, generateApiKey, verifyUsername, switchDatabaseBackend, updateModels, updateAdminCredentials } from './services/config';
+import { isConfigured, getConfig, saveConfig, generateJwtSecret, generateApiKey, verifyUsername, switchDatabaseBackend, updateAdminCredentials } from './services/config';
 import {
     OAUTH_CONFIG,
     generatePkce,
@@ -20,12 +21,8 @@ import {
     refreshAccessToken,
     checkAccountTier,
     GEMINI_API_BASE,
-    DEFAULT_MODEL,
-    FALLBACK_MODEL,
-    FALLBACK_MODEL_V2,
-    getFirstFallbackModel,
-    getSecondFallbackModel
-} from './services/gemini';
+    DEFAULT_MODEL
+} from './services/antigravity';
 import { warmAccountCache, invalidateAccountCache } from './services/account-manager';
 
 dotenv.config();
@@ -34,7 +31,9 @@ const app = express();
 app.set('trust proxy', 1); // Trust first proxy (LiteSpeed/cPanel)
 app.use(cors({
     origin: process.env.NODE_ENV === 'production'
-        ? (process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()) : false)
+        ? (process.env.CORS_ORIGIN === '*'
+            ? true
+            : (process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()) : false))
         : true,
     credentials: true
 }));
@@ -44,16 +43,32 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "https://cdn.jsdelivr.net"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
             connectSrc: ["'self'"],
             imgSrc: ["'self'", "data:"],
-            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            fontSrc: ["'self'"],
         }
     }
 }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, '../public')));
+const webDir = path.join(__dirname, '../out');
+app.use(express.static(webDir, { index: false, redirect: false }));
+
+function sendWebPage(res: express.Response, route: string) {
+    const normalized = route === '/' ? '/index' : route;
+    const candidates = [
+        path.join(webDir, `${normalized}.html`),
+        path.join(webDir, normalized, 'index.html'),
+        path.join(webDir, 'index.html'),
+    ];
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            return res.sendFile(candidate);
+        }
+    }
+    return res.status(500).send('OpenGem frontend build not found. Run `npm run build` before starting the server.');
+}
 
 // --- SETUP MIDDLEWARE ---
 // Redirect all requests to /setup if not configured (except setup routes and static files)
@@ -61,11 +76,10 @@ app.use((req, res, next) => {
     // Always allow setup routes, static assets
     if (
         req.path === '/setup' ||
-        req.path === '/setup.html' ||
-        req.path === '/setup.css' ||
-        req.path === '/setup.js' ||
         req.path === '/api/setup' ||
         req.path === '/api/setup/status' ||
+        req.path === '/robots.txt' ||
+        req.path.startsWith('/_next/') ||
         req.path.endsWith('.css') ||
         req.path.endsWith('.js') ||
         req.path.endsWith('.ico') ||
@@ -86,12 +100,16 @@ app.use((req, res, next) => {
 // --- SETUP ROUTES ---
 
 // Serve setup.html at clean /setup URL
-app.get('/setup', (req, res) => {
-    res.sendFile(path.join(__dirname, '../public/setup.html'));
+app.get(['/setup', '/setup/'], (req, res) => {
+    sendWebPage(res, '/setup');
 });
 
 app.get('/api/setup/status', (req, res) => {
     res.json({ configured: isConfigured() });
+});
+
+app.get('/robots.txt', (req, res) => {
+    res.type('text/plain').send('User-agent: *\nAllow: /\n');
 });
 
 app.post('/api/setup', async (req, res) => {
@@ -599,44 +617,7 @@ import { handleAnthropicMessages } from './controllers/anthropic';
 
 // --- MODEL CONFIGURATION ROUTES ---
 
-app.get('/api/admin/models', requireAdmin, (req, res) => {
-    try {
-        res.json({
-            fallback: getFirstFallbackModel(),
-            fallbackV2: getSecondFallbackModel(),
-        });
-    } catch (err: any) {
-        res.status(500).json({ error: 'Failed to get model configuration.' });
-    }
-});
 
-app.post('/api/admin/models', requireAdmin, (req, res) => {
-    try {
-        const { fallback, fallbackV2 } = req.body;
-
-        if (!fallback || !fallbackV2) {
-            return res.status(400).json({ error: 'Both fallback model fields are required: fallback, fallbackV2.' });
-        }
-
-        if (typeof fallback !== 'string' || typeof fallbackV2 !== 'string') {
-            return res.status(400).json({ error: 'All model fields must be strings.' });
-        }
-
-        updateModels({
-            fallback: fallback.trim(),
-            fallbackV2: fallbackV2.trim(),
-        });
-
-        res.json({
-            success: true,
-            message: 'Model configuration updated successfully.',
-            models: { fallback: fallback.trim(), fallbackV2: fallbackV2.trim() },
-        });
-    } catch (err: any) {
-        console.error('Model config update error:', err);
-        res.status(500).json({ error: 'Failed to update model configuration.' });
-    }
-});
 
 const apiLimiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minute
@@ -651,8 +632,12 @@ app.post('/api/admin/chat', requireAdmin, (req, res) => {
 
 // --- SPA ROUTING ---
 
-app.get(['/overview', '/accounts', '/keys', '/logs', '/docs', '/chat', '/settings'], (req, res) => {
-    res.sendFile(path.join(__dirname, '../public/index.html'));
+app.get(/^\/(overview|accounts|keys|logs|docs|chat|settings)\/?$/, (req, res) => {
+    sendWebPage(res, req.path.replace(/\/$/, ''));
+});
+
+app.get('/', (req, res) => {
+    sendWebPage(res, '/');
 });
 
 app.post('/v1beta/models/:model\\::action', apiLimiter, requireApiKey, (req, res, next) => {
