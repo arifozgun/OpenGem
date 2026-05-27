@@ -1,10 +1,8 @@
 <div align="center">
 
-<img alt="OpenGem Logo" src="app/assets/logo-black.png" height="112">
-
-# OpenGem 0.5.0
-
-**Self-hosted AI API gateway for Gemini, OpenAI-compatible and Anthropic-compatible clients.**
+<p align="center">
+  <img src="https://api.speakblend.com/api/files/pbc_3307824350/8r1mh0hua000cwt/opengem_bcpoammn3u.png" alt="OpenGem - Self-hosted AI API gateway for Gemini, OpenAI-compatible and Anthropic-compatible clients" />
+</p>
 
 [![Version](https://img.shields.io/badge/Version-0.5.0-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
