@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.0] - 2026-05-26
 
 ### Added
-- **Next.js Admin Console** — Replaced the legacy hand-written HTML/CSS/JS frontend with a Next.js App Router static export styled after the `tygoyemek` panel. The new console covers login, overview, accounts, API keys, logs, documentation, playground, chat, settings and setup. (`app/`, `components/ui/`, `lib/`, `next.config.mjs`, `postcss.config.mjs`)
+- **Next.js Admin Console** — Replaced the legacy hand-written HTML/CSS/JS frontend with a Next.js App. The new console covers login, overview, accounts, API keys, logs, documentation, playground, chat, settings and setup. (`app/`, `components/ui/`, `lib/`, `next.config.mjs`, `postcss.config.mjs`)
 - **New Setup Wizard** — Rebuilt setup as a React route with the same backend choices, Firebase JSON paste support and admin credential validation as before. (`app/setup/`)
 - **SQLite Local Backend (`node:sqlite`)** — Replaced the legacy JSON-file local database with SQLite using Node.js' native `node:sqlite` module. Existing `data/db.json` files are migrated once and renamed to `db.json.bak`. (`src/services/sqliteDb.ts`, `src/services/database.ts`)
 - **Node 22.5 engine constraint** — Declared `engines.node >= 22.5.0` because the local backend uses built-in SQLite. (`package.json`)
