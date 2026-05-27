@@ -204,6 +204,16 @@ OpenGem/
 - Keep the Node process bound to loopback unless you know why it must be exposed.
 - Regenerate API keys after switching database backends; raw key material is intentionally not recoverable.
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=opengem%2Fopengem%2Carifozgun%2Fopengem&type=date&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=opengem/opengem%2Carifozgun/opengem&type=date&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=opengem/opengem%2Carifozgun/opengem&type=date&legend=bottom-right" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=opengem/opengem%2Carifozgun/opengem&type=date&legend=bottom-right" />
+ </picture>
+</a>
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
