@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-05-28
+
+### Added
+- **Task-aware account affinity** — Automated agent tasks can now stay on the same upstream Google account across turns via `x-opengem-session-id`, `x-opengem-task-id`, OpenAI `user`, Anthropic `metadata.user_id`, or automatic task fingerprinting. Sticky tasks still soft-fail over and rebind when the bound account hits quota, rate limits, or transient failures. (`src/services/account-affinity.ts`, `src/controllers/chat.ts`, `src/controllers/openai.ts`, `src/controllers/anthropic.ts`)
+- **Affinity log metadata** — Request logs now store affinity source, hit/rebind state, prompt tokens, completion tokens, and effective token counts. The admin log detail view exposes sticky/effective-token metadata for debugging. (`src/services/database.ts`, `src/services/sqliteDb.ts`, `src/services/firebase.ts`, `app/opengem-console.jsx`)
+- **Admin chat session affinity** — The dashboard chat now sends the full message history with a stable per-chat session id so multi-turn chat stays on the same upstream account and benefits from the gateway's context affinity. (`app/opengem-console.jsx`)
+- **Documentation account affinity guide** — The Documentation page now lists the sticky-routing headers for session affinity, task affinity, and per-request opt-out. (`app/opengem-console.jsx`)
+
+### Fixed
+- **Overview Token Accounting** — Overview and per-account token totals now use effective token accounting for sticky tasks instead of blindly summing every repeated full-context request. Existing sticky logs without effective-token metadata are grouped by affinity key and counted once by their maximum raw token count. (`src/services/token-stats.ts`, `src/services/sqliteDb.ts`, `src/services/firebase.ts`)
+- **Mobile Sidebar Clipping** — The mobile dashboard sidebar now respects the top safe area and gives the horizontal nav enough vertical room so active items are not clipped at the top. (`app/opengem-console.jsx`)
+- **Mobile API Cards** — Documentation and Settings compatibility cards now wrap long endpoint/auth strings instead of overflowing their card containers on small screens. (`app/opengem-console.jsx`)
+- **Responsive Button Wrapping** — Dashboard buttons and button rows now wrap within their containers instead of overflowing when multiple actions sit side by side on narrow screens. (`components/ui/button.jsx`, `app/opengem-console.jsx`)
+- **Log Detail Copy Tooltip** — Opening a log detail dialog no longer autofocuses the first copy button, preventing the System Prompt copy tooltip from appearing automatically. (`app/opengem-console.jsx`)
+
+### Changed
+- **Dashboard Model Defaults** — Chat and Documentation playground model selectors now default to `gemini-3.1-flash-lite`, including after starting a new chat. (`app/opengem-console.jsx`)
+- Incremented package version to `0.5.1`.
+
 ## [0.5.0] - 2026-05-26
 
 ### Added

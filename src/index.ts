@@ -24,6 +24,7 @@ import {
     DEFAULT_MODEL
 } from './services/antigravity';
 import { warmAccountCache, invalidateAccountCache } from './services/account-manager';
+import { hashAffinityValue } from './services/account-affinity';
 
 dotenv.config();
 
@@ -354,6 +355,7 @@ function makeApiKeyMiddleware(shape: 'gemini' | 'openai' | 'anthropic') {
             if (!isValid) {
                 return sendAuthError(res, 401, 'Unauthorized. Invalid API Key.', shape);
             }
+            (req as any).opengemApiKeyHash = hashAffinityValue(apiKey);
             next();
         } catch (err) {
             console.error('API Key validation error:', err);
@@ -577,6 +579,16 @@ app.post('/api/admin/db-switch', requireAdmin, async (req, res) => {
                 accountEmail: log.accountEmail,
                 question: log.question,
                 answer: log.answer,
+                ...(log.systemInstruction && { systemInstruction: log.systemInstruction }),
+                ...(log.model && { model: log.model }),
+                ...(log.isFallback !== undefined && { isFallback: log.isFallback }),
+                ...(log.affinityKeyHash && { affinityKeyHash: log.affinityKeyHash }),
+                ...(log.affinitySource && { affinitySource: log.affinitySource }),
+                ...(log.affinityHit !== undefined && { affinityHit: log.affinityHit }),
+                ...(log.affinityRebound !== undefined && { affinityRebound: log.affinityRebound }),
+                ...(log.promptTokens !== undefined && { promptTokens: log.promptTokens }),
+                ...(log.completionTokens !== undefined && { completionTokens: log.completionTokens }),
+                ...(log.effectiveTokensUsed !== undefined && { effectiveTokensUsed: log.effectiveTokensUsed }),
                 tokensUsed: log.tokensUsed,
                 success: log.success,
                 timestamp: log.timestamp,

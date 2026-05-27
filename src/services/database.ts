@@ -11,6 +11,13 @@ export interface RequestLog {
     systemInstruction?: string;
     model?: string;
     isFallback?: boolean;
+    affinityKeyHash?: string;
+    affinitySource?: string;
+    affinityHit?: boolean;
+    affinityRebound?: boolean;
+    promptTokens?: number;
+    completionTokens?: number;
+    effectiveTokensUsed?: number;
     tokensUsed: number;
     success: boolean;
     timestamp: Date | number;

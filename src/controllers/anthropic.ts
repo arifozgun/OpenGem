@@ -16,6 +16,7 @@ import {
     translateGeminiToAnthropic,
 } from '../services/adapters/anthropic';
 import { resolveCompatibilityModel } from '../services/adapters/model-aliases';
+import { createAccountAffinityContext } from '../services/account-affinity';
 import { generateContentWithAccounts, streamGeminiWithSink } from './chat';
 
 function sendAnthropicError(res: Response, status: number, message: string, type = 'invalid_request_error'): void {
@@ -37,6 +38,14 @@ export async function handleAnthropicMessages(req: Request, res: Response): Prom
 
     const requestedModel = translated.model;
     const geminiModel = resolveCompatibilityModel(requestedModel);
+    const affinity = createAccountAffinityContext({
+        req,
+        model: requestedModel,
+        contents: translated.contents,
+        systemInstruction: translated.systemInstruction,
+        explicitUserId: typeof req.body?.metadata?.user_id === 'string' ? req.body.metadata.user_id : undefined,
+        explicitUserSource: 'anthropic-user',
+    });
 
     try {
         if (translated.stream) {
@@ -55,6 +64,7 @@ export async function handleAnthropicMessages(req: Request, res: Response): Prom
                 toolConfig: translated.toolConfig,
                 res,
                 sink,
+                affinity,
             });
             return;
         }
@@ -66,6 +76,8 @@ export async function handleAnthropicMessages(req: Request, res: Response): Prom
             translated.systemInstruction,
             translated.tools,
             translated.toolConfig,
+            undefined,
+            affinity,
         );
 
         if (!result) {

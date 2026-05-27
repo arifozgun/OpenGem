@@ -16,6 +16,7 @@ import {
     translateOpenAIRequest,
 } from '../services/adapters/openai';
 import { resolveCompatibilityModel, listCompatibilityModelIds } from '../services/adapters/model-aliases';
+import { createAccountAffinityContext } from '../services/account-affinity';
 import {
     generateContentWithAccounts,
     streamGeminiWithSink,
@@ -40,6 +41,14 @@ export async function handleOpenAIChatCompletions(req: Request, res: Response): 
 
     const requestedModel = translated.model;
     const geminiModel = resolveCompatibilityModel(requestedModel);
+    const affinity = createAccountAffinityContext({
+        req,
+        model: requestedModel,
+        contents: translated.contents,
+        systemInstruction: translated.systemInstruction,
+        explicitUserId: typeof req.body?.user === 'string' ? req.body.user : undefined,
+        explicitUserSource: 'openai-user',
+    });
 
     try {
         if (translated.stream) {
@@ -59,6 +68,7 @@ export async function handleOpenAIChatCompletions(req: Request, res: Response): 
                 toolConfig: translated.toolConfig,
                 res,
                 sink,
+                affinity,
             });
             return;
         }
@@ -70,6 +80,8 @@ export async function handleOpenAIChatCompletions(req: Request, res: Response): 
             translated.systemInstruction,
             translated.tools,
             translated.toolConfig,
+            undefined,
+            affinity,
         );
 
         if (!result) {

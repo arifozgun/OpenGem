@@ -4,7 +4,7 @@
   <img src="https://api.speakblend.com/api/files/pbc_3307824350/8r1mh0hua000cwt/opengem_bcpoammn3u.png" alt="OpenGem - Self-hosted AI API gateway for Gemini, OpenAI-compatible and Anthropic-compatible clients" />
 </p>
 
-[![Version](https://img.shields.io/badge/Version-0.5.0-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
+[![Version](https://img.shields.io/badge/Version-0.5.1-orange.svg)](https://github.com/arifozgun/OpenGem/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-22.5+-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue.svg)](https://typescriptlang.org)
@@ -74,6 +74,14 @@ Authorization: Bearer sk-your-api-key
 x-goog-api-key: sk-your-api-key
 x-api-key: sk-your-api-key
 ?key=sk-your-api-key
+```
+
+Optional account-affinity headers keep multi-turn agent tasks on the same upstream Google account while still failing over on quota or rate-limit errors:
+
+```text
+x-opengem-session-id: stable-session-or-thread-id
+x-opengem-task-id: stable-task-id
+x-opengem-affinity: off
 ```
 
 ### Gemini

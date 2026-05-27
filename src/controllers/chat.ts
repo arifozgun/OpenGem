@@ -16,6 +16,17 @@ import {
 import { geminiRequestSemaphore, geminiStreamSemaphore, updateConcurrencyLimits } from '../services/concurrency';
 import { getReadyAccounts, ensureFreshToken } from '../services/account-manager';
 import {
+    AccountAffinityContext,
+    bindAffinityAccount,
+    computeEffectiveTokenUsage,
+    createAccountAffinityContext,
+    getAffinityLogFields,
+    getAffinityPromptId,
+    orderAccountsForAffinity,
+    releaseAffinityReservation,
+    reserveAffinityAccount,
+} from '../services/account-affinity';
+import {
     StreamSink,
     GeminiNativeSink,
     normalizeGeminiChunk,
@@ -90,6 +101,31 @@ function extractText(candidate: any): string {
         .trim();
 }
 
+interface RequestTokenUsage {
+    totalTokens: number;
+    promptTokens?: number;
+    completionTokens?: number;
+    effectiveTokens?: number;
+}
+
+function toPositiveNumber(value: any): number | undefined {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function extractGeminiUsage(meta: any): RequestTokenUsage {
+    const promptTokens = toPositiveNumber(meta?.promptTokenCount);
+    const completionTokens = toPositiveNumber(meta?.candidatesTokenCount ?? meta?.candidateTokenCount ?? meta?.completionTokenCount);
+    const totalTokens = toPositiveNumber(meta?.totalTokenCount)
+        ?? ((promptTokens ?? 0) + (completionTokens ?? 0));
+
+    return {
+        totalTokens,
+        ...(promptTokens !== undefined && { promptTokens }),
+        ...(completionTokens !== undefined && { completionTokens }),
+    };
+}
+
 async function drainStream(stream: any): Promise<string> {
     const chunks: Buffer[] = [];
     try { for await (const chunk of stream) chunks.push(chunk as Buffer); } catch { /* ignore */ }
@@ -106,7 +142,19 @@ async function selectReadyAccounts() {
 
 // ─── Request logging ──────────────────────────────────────
 
-function logRequest(db: any, email: string, contents: any[], answer: string, tokens: number, success: boolean, systemInstruction?: any, model?: string, isFallback?: boolean) {
+function logRequest(
+    db: any,
+    email: string,
+    contents: any[],
+    answer: string,
+    tokens: number,
+    success: boolean,
+    systemInstruction?: any,
+    model?: string,
+    isFallback?: boolean,
+    affinity?: AccountAffinityContext,
+    usage?: RequestTokenUsage,
+) {
     let question = 'Unknown';
     const last = contents?.[contents.length - 1];
     if (last?.parts) {
@@ -130,6 +178,10 @@ function logRequest(db: any, email: string, contents: any[], answer: string, tok
         ...(si && { systemInstruction: si }),
         ...(model && { model }),
         ...(isFallback !== undefined && { isFallback }),
+        ...getAffinityLogFields(affinity),
+        ...(usage?.promptTokens !== undefined && { promptTokens: usage.promptTokens }),
+        ...(usage?.completionTokens !== undefined && { completionTokens: usage.completionTokens }),
+        ...(usage?.effectiveTokens !== undefined && { effectiveTokensUsed: usage.effectiveTokens }),
         tokensUsed: tokens, success, timestamp: new Date(),
     }).catch((err: any) => console.error('Log write error:', err));
 }
@@ -150,6 +202,12 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
         contents.forEach((c: any) => { if (!c.role) c.role = 'user'; });
 
         const finalToolConfig = toolConfig || tool_config;
+        const affinity = createAccountAffinityContext({
+            req,
+            model: requestedModelLabel,
+            contents,
+            systemInstruction: finalSystemInstruction,
+        });
         if (req.params.action === 'streamGenerateContent') {
             const sink = new GeminiNativeSink(res, /* headersAlreadyWritten */ false, /* unwrapEnvelope */ true);
             await streamGeminiWithSink({
@@ -162,11 +220,12 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
                 res,
                 sink,
                 logModel: requestedModelLabel,
+                affinity,
             });
             return;
         }
 
-        const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, finalSystemInstruction, tools, finalToolConfig, requestedModelLabel);
+        const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, finalSystemInstruction, tools, finalToolConfig, requestedModelLabel, affinity);
         if (!result) { res.status(503).json({ error: 'All Gemini accounts exhausted or failed.' }); return; }
         res.json(result);
     } catch (e: any) {
@@ -200,13 +259,14 @@ export async function generateContentWithAccounts(
     tools?: any[],
     toolConfig?: any,
     logModel?: string,
+    affinity?: AccountAffinityContext,
 ): Promise<GeminiNonStreamResult | null> {
     const modelForLog = logModel || model;
     const db = getDatabase();
     await updateConcurrencyLimits();
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const accounts = await selectReadyAccounts();
+        const accounts = orderAccountsForAffinity(await selectReadyAccounts(), affinity);
         if (accounts.length === 0) { console.error('❌ No active accounts.'); return null; }
 
         for (let i = 0; i < accounts.length; i++) {
@@ -225,13 +285,15 @@ export async function generateContentWithAccounts(
             if (i > 0) await new Promise(r => setTimeout(r, INTER_ACCOUNT_STAGGER_MS));
 
             try {
+                reserveAffinityAccount(affinity, account.email);
                 const token = await ensureFreshToken(account);
                 const requestPayload = buildPayload(contents, generationConfig, systemInstruction, tools, toolConfig);
                 let usedModel = model || DEFAULT_MODEL;
+                const userPromptId = getAffinityPromptId(affinity);
 
                 const geminiBody = (m: string) => ({
                     model: m, project: account.projectId,
-                    user_prompt_id: 'default-prompt', request: requestPayload,
+                    user_prompt_id: userPromptId, request: requestPayload,
                 });
 
                 const response = await geminiRequestSemaphore.run(() =>
@@ -246,35 +308,41 @@ export async function generateContentWithAccounts(
                     let errCategory: 'quota' | 'rate_limit' = 'rate_limit';
                     try { errCategory = classify429(await response.text()); } catch { /* ignore */ }
                     markAccountCooldown(account.email, errCategory === 'quota' ? 'quota' : 'rate_limit');
+                    releaseAffinityReservation(affinity, account.email);
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                    logRequest(db, account.email, contents, `ERROR 429: ${errCategory} cooldown`, 0, false, systemInstruction, modelForLog, false);
+                    logRequest(db, account.email, contents, `ERROR 429: ${errCategory} cooldown`, 0, false, systemInstruction, modelForLog, false, affinity);
                     continue;
                 }
 
                 if (!response.ok) {
                     const text = await response.text();
                     console.error(`❌ API error ${response.status} for ${account.email}: ${text}`);
+                    releaseAffinityReservation(affinity, account.email);
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                    logRequest(db, account.email, contents, `ERROR ${response.status}: ${text.substring(0, 100)}`, 0, false, systemInstruction, modelForLog, false);
+                    logRequest(db, account.email, contents, `ERROR ${response.status}: ${text.substring(0, 100)}`, 0, false, systemInstruction, modelForLog, false, affinity);
                     continue;
                 }
 
                 const data = await response.json() as any;
                 const text = extractText(data.response?.candidates?.[0]);
-                const tokens = data.usageMetadata?.totalTokenCount || data.response?.usageMetadata?.totalTokenCount || 0;
+                const usage = extractGeminiUsage(data.usageMetadata || data.response?.usageMetadata);
                 if (data.response?.candidates?.[0]) {
                     markAccountSuccess(account.email);
-                    await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens });
-                    logRequest(db, account.email, contents, text, tokens, true, systemInstruction, modelForLog, false);
+                    usage.effectiveTokens = computeEffectiveTokenUsage(affinity, account.email, usage);
+                    bindAffinityAccount(affinity, account.email);
+                    await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: usage.effectiveTokens });
+                    logRequest(db, account.email, contents, text, usage.totalTokens, true, systemInstruction, modelForLog, false, affinity, usage);
                     console.log(`✅ Fulfilled by ${account.email}`);
                     return { response: data.response, usedModel };
                 }
+                releaseAffinityReservation(affinity, account.email);
             } catch (e: any) {
                 console.error(`❌ Error with ${account.email}:`, e);
                 const cat = classifyError(e.message || '');
                 markAccountCooldown(account.email, cat);
+                releaseAffinityReservation(affinity, account.email);
                 await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                logRequest(db, account.email, contents, `ERROR: ${e.message?.substring(0, 100) || 'Network Error'}`, 0, false, systemInstruction, modelForLog, false);
+                logRequest(db, account.email, contents, `ERROR: ${e.message?.substring(0, 100) || 'Network Error'}`, 0, false, systemInstruction, modelForLog, false, affinity);
             }
         }
 
@@ -290,9 +358,9 @@ export async function generateContentWithAccounts(
 /** Legacy signature kept for backward compatibility — returns `data.response` only. */
 export async function tryGenerateContentWithAccounts(
     model: string, contents: any[],
-    generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any, logModel?: string
+    generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any, logModel?: string, affinity?: AccountAffinityContext
 ): Promise<any | null> {
-    const result = await generateContentWithAccounts(model, contents, generationConfig, systemInstruction, tools, toolConfig, logModel);
+    const result = await generateContentWithAccounts(model, contents, generationConfig, systemInstruction, tools, toolConfig, logModel, affinity);
     return result ? result.response : null;
 }
 
@@ -300,7 +368,7 @@ export async function tryGenerateContentWithAccounts(
 
 interface PipeStreamResult {
     fullAnswer: string;
-    tokenUsage: number;
+    usage: RequestTokenUsage;
     finishReason?: string;
 }
 
@@ -319,6 +387,8 @@ async function pipeStream(stream: any, sink: StreamSink): Promise<PipeStreamResu
     return new Promise<PipeStreamResult>((resolve, reject) => {
         let fullAnswer = '';
         let tokenUsage = 0;
+        let promptTokens: number | undefined;
+        let completionTokens: number | undefined;
         let finishReason: string | undefined;
         const decoder = new StringDecoder('utf8');
         let buffer = '';
@@ -348,6 +418,8 @@ async function pipeStream(stream: any, sink: StreamSink): Promise<PipeStreamResu
                         fullAnswer += `\n\n[Tool Call: ${fc.name}]\n${JSON.stringify(fc.args, null, 2)}\n\n`;
                     }
                     if (normalized.usage?.totalTokens) tokenUsage = normalized.usage.totalTokens;
+                    if (normalized.usage?.promptTokens) promptTokens = normalized.usage.promptTokens;
+                    if (normalized.usage?.completionTokens) completionTokens = normalized.usage.completionTokens;
                     if (normalized.finishReason) finishReason = normalized.finishReason;
 
                     try {
@@ -375,12 +447,22 @@ async function pipeStream(stream: any, sink: StreamSink): Promise<PipeStreamResu
                         const normalized = normalizeGeminiChunk(parsed);
                         for (const t of normalized.textDeltas) fullAnswer += t;
                         if (normalized.usage?.totalTokens) tokenUsage = normalized.usage.totalTokens;
+                        if (normalized.usage?.promptTokens) promptTokens = normalized.usage.promptTokens;
+                        if (normalized.usage?.completionTokens) completionTokens = normalized.usage.completionTokens;
                         if (normalized.finishReason) finishReason = normalized.finishReason;
                         sink.forwardChunk(parsed, normalized, jsonStr);
                     } catch { /* ignore */ }
                 }
             }
-            settle(() => resolve({ fullAnswer, tokenUsage, finishReason }));
+            settle(() => resolve({
+                fullAnswer,
+                usage: {
+                    totalTokens: tokenUsage,
+                    ...(promptTokens !== undefined && { promptTokens }),
+                    ...(completionTokens !== undefined && { completionTokens }),
+                },
+                finishReason,
+            }));
         });
 
         stream.on('error', (err: Error) => {
@@ -402,6 +484,7 @@ export interface StreamWithSinkOptions {
     sink: StreamSink;
     /** Client-facing model label to record in request logs (overrides upstream slug). */
     logModel?: string;
+    affinity?: AccountAffinityContext;
 }
 
 /**
@@ -412,7 +495,7 @@ export interface StreamWithSinkOptions {
  * directly (apart from issuing a JSON 503 *before* the sink has started).
  */
 export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise<void> {
-    const { model, contents, generationConfig, systemInstruction, tools, toolConfig, res, sink, logModel } = opts;
+    const { model, contents, generationConfig, systemInstruction, tools, toolConfig, res, sink, logModel, affinity } = opts;
     const modelForLog = logModel || model || DEFAULT_MODEL;
     const db = getDatabase();
     await updateConcurrencyLimits();
@@ -432,7 +515,7 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
     };
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const accounts = await selectReadyAccounts();
+        const accounts = orderAccountsForAffinity(await selectReadyAccounts(), affinity);
 
         if (accounts.length === 0) {
             reportNoAccounts();
@@ -447,16 +530,23 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
                 else continue;
             }
 
+            if (!accountRateLimiter.consume(account.email).allowed) {
+                console.warn(`🚦 ${account.email} locally rate limited. Skipping stream.`);
+                continue;
+            }
+
             if (i > 0) await new Promise(r => setTimeout(r, INTER_ACCOUNT_STAGGER_MS));
 
             try {
+                reserveAffinityAccount(affinity, account.email);
                 const token = await ensureFreshToken(account);
                 const requestPayload = buildPayload(contents, generationConfig, systemInstruction, tools, toolConfig);
                 let usedModel = requestedModel;
+                const userPromptId = getAffinityPromptId(affinity);
 
                 const geminiBody = (m: string) => ({
                     model: m, project: account.projectId,
-                    user_prompt_id: 'default-prompt', request: requestPayload,
+                    user_prompt_id: userPromptId, request: requestPayload,
                 });
 
                 let { status, stream } = await geminiStreamSemaphore.run(() => nativeFetchStream(`${GEMINI_API_BASE}:streamGenerateContent?alt=sse`, {
@@ -468,6 +558,7 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
                     const errText = await drainStream(stream);
                     const cat = classify429(errText);
                     markAccountCooldown(account.email, cat === 'quota' ? 'quota' : 'rate_limit');
+                    releaseAffinityReservation(affinity, account.email);
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
                     continue;
                 }
@@ -475,6 +566,7 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
                 if (status < 200 || status >= 300) {
                     const text = await drainStream(stream);
                     console.error(`❌ Stream API error ${status} for ${account.email}: ${text.substring(0, 200)}`);
+                    releaseAffinityReservation(affinity, account.email);
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
                     continue;
                 }
@@ -484,17 +576,20 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
                 sinkStarted = true;
 
                 try {
-                    const { fullAnswer, tokenUsage, finishReason } = await pipeStream(stream, sink);
+                    const { fullAnswer, usage, finishReason } = await pipeStream(stream, sink);
                     markAccountSuccess(account.email);
-                    await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: tokenUsage });
-                    logRequest(db, account.email, contents, fullAnswer, tokenUsage, true, systemInstruction, modelForLog, usedModel !== requestedModel);
-                    sink.finalize({ fullText: fullAnswer, tokenUsage, finishReason });
+                    usage.effectiveTokens = computeEffectiveTokenUsage(affinity, account.email, usage);
+                    bindAffinityAccount(affinity, account.email);
+                    await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: usage.effectiveTokens });
+                    logRequest(db, account.email, contents, fullAnswer, usage.totalTokens, true, systemInstruction, modelForLog, usedModel !== requestedModel, affinity, usage);
+                    sink.finalize({ fullText: fullAnswer, tokenUsage: usage.totalTokens, finishReason });
                     console.log(`✅ Stream fulfilled by ${account.email} [${usedModel}]`);
                     return;
                 } catch (streamErr: any) {
                     console.error(`❌ Stream pipe error for ${account.email}:`, streamErr);
                     const cat = classifyError(streamErr.message || '');
                     markAccountCooldown(account.email, cat);
+                    releaseAffinityReservation(affinity, account.email);
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
 
                     // Once the sink started writing, the response is committed. We
@@ -508,6 +603,7 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
                 console.error(`❌ Stream network error with ${account.email}:`, e);
                 const cat = classifyError(e.message || '');
                 markAccountCooldown(account.email, cat);
+                releaseAffinityReservation(affinity, account.email);
                 await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
             }
         }
@@ -549,6 +645,12 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
         });
 
         const sink = new GeminiNativeSink(res, /* headersAlreadyWritten */ true, /* unwrapEnvelope */ false);
+        const affinity = createAccountAffinityContext({
+            req,
+            model: reqModel || DEFAULT_MODEL,
+            contents,
+            systemInstruction: finalSystemInstruction,
+        });
         await streamGeminiWithSink({
             model,
             contents,
@@ -558,6 +660,7 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
             toolConfig: toolConfig || tool_config,
             res,
             sink,
+            affinity,
         });
     } catch (e: any) {
         console.error('Admin Chat Error:', e);

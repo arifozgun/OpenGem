@@ -86,6 +86,8 @@ const MODELS = [
   "gemini-3.5-flash-low",
 ];
 
+const DEFAULT_DASHBOARD_MODEL = "gemini-3.1-flash-lite";
+
 const firebaseFields = [
   ["apiKey", "API Key", "AIzaSy..."],
   ["authDomain", "Auth Domain", "your-app.firebaseapp.com"],
@@ -313,7 +315,7 @@ function PageHeader({ title, description, children }) {
         <h1 className="text-2xl font-semibold tracking-normal">{title}</h1>
         {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
       </div>
-      {children ? <div className="flex shrink-0 flex-wrap items-center gap-2">{children}</div> : null}
+      {children ? <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div> : null}
     </div>
   );
 }
@@ -458,15 +460,16 @@ export function OpenGemConsole() {
   const [pasteConfigError, setPasteConfigError] = useState("");
   const [credForm, setCredForm] = useState({ currentPassword: "", newUsername: "", newPassword: "", confirmPassword: "" });
   const [credStatus, setCredStatus] = useState("");
-  const [playground, setPlayground] = useState({ apiKey: "", model: "gemini-3-pro-preview", message: "", response: "Awaiting response..." });
+  const [playground, setPlayground] = useState({ apiKey: "", model: DEFAULT_DASHBOARD_MODEL, message: "", response: "Awaiting response..." });
   const [playgroundLoading, setPlaygroundLoading] = useState(false);
   const [featureTab, setFeatureTab] = useState("streaming");
   const [codeTab, setCodeTab] = useState("curl");
-  const [chatModel, setChatModel] = useState("gemini-3-pro-preview");
+  const [chatModel, setChatModel] = useState(DEFAULT_DASHBOARD_MODEL);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([]);
   const [chatContents, setChatContents] = useState([]);
   const [chatSending, setChatSending] = useState(false);
+  const [chatSessionId, setChatSessionId] = useState(() => crypto.randomUUID());
   const chatScrollRef = useRef(null);
 
   const activePage = useMemo(() => PAGES.find((page) => page.id === currentPage) || PAGES[0], [currentPage]);
@@ -792,7 +795,10 @@ export function OpenGemConsole() {
     try {
       const res = await fetch("/api/admin/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-opengem-session-id": `admin-chat-${chatSessionId}`,
+        },
         credentials: "same-origin",
         body: JSON.stringify({
           model: chatModel,
@@ -870,7 +876,9 @@ export function OpenGemConsole() {
   return (
     <TooltipProvider>
       <div className="min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
-        <aside className="border-b bg-card lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+        <aside
+          className="dashboard-sidebar relative z-20 border-b bg-card lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r"
+        >
           <div className="flex h-full flex-col">
             <div className="flex items-center gap-3 px-4 py-4">
               <div className="flex size-10 items-center justify-center rounded-lg bg-background ring-1 ring-border">
@@ -881,7 +889,8 @@ export function OpenGemConsole() {
                 <div className="text-xs text-muted-foreground">Admin Console</div>
               </div>
             </div>
-            <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:overflow-visible">
+            <nav className="overflow-x-auto px-3 pb-3 lg:overflow-visible">
+              <div className="flex gap-1 py-1.5 lg:flex-col lg:py-0">
               {PAGES.map((page) => {
                 const Icon = page.icon;
                 return (
@@ -891,7 +900,7 @@ export function OpenGemConsole() {
                     onClick={() => navigate(page.id)}
                     className={cn(
                       "flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-                      currentPage === page.id && "bg-primary/10 text-primary ring-1 ring-primary/20"
+                      currentPage === page.id && "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_20%,transparent)]"
                     )}
                   >
                     <Icon data-icon="inline-start" />
@@ -899,6 +908,7 @@ export function OpenGemConsole() {
                   </button>
                 );
               })}
+              </div>
             </nav>
             <div className="mt-auto hidden p-3 lg:block">
               <Button variant="ghost" className="w-full justify-start" onClick={logout}>
@@ -993,6 +1003,8 @@ export function OpenGemConsole() {
                     setChatMessages([]);
                     setChatContents([]);
                     setChatInput("");
+                    setChatSessionId(crypto.randomUUID());
+                    setChatModel(DEFAULT_DASHBOARD_MODEL);
                   }}
                   scrollRef={chatScrollRef}
                 />
@@ -1295,12 +1307,14 @@ function LogsPage({ logs, loading, error, privacyMode, onRefresh, onSelect }) {
               {!loading &&
                 logs.map((log, index) => {
                   const task = isTaskLog(log);
+                  const sticky = Boolean(log.affinityKeyHash);
                   return (
                     <TableRow key={log.id || `${log.timestamp}-${index}`} className="cursor-pointer" onClick={() => onSelect(log)}>
                       <TableCell className="whitespace-nowrap text-muted-foreground">{formatTime(log.timestamp)}</TableCell>
                       <TableCell className="font-mono text-xs">
                         {censorEmail(log.accountEmail, privacyMode)}
                         {task ? <Badge className="ml-2">Task</Badge> : null}
+                        {sticky ? <Badge variant="outline" className="ml-2">Sticky</Badge> : null}
                       </TableCell>
                       <TableCell className="max-w-[280px] truncate">{task ? "Automated Agent Task" : log.question || "-"}</TableCell>
                       <TableCell className="max-w-[360px] truncate">
@@ -1361,27 +1375,47 @@ function DocsPage({ baseUrl, featureTab, setFeatureTab, codeTab, setCodeTab, pla
           <CardTitle>API Compatibility</CardTitle>
           <CardDescription>OpenGem translates requests to Gemini while preserving familiar client protocols.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-3">
+        <CardContent className="grid min-w-0 gap-3 lg:grid-cols-3">
           {[
             { title: "Google Gemini", icon: geminiIcon.src, tag: "Native", rows: ["POST /v1beta/models/{model}:generateContent", "POST /v1beta/models/{model}:streamGenerateContent", "Auth: x-goog-api-key / ?key="] },
             { title: "OpenAI", icon: openaiIcon.src, tag: "Compatible", rows: ["POST /v1/chat/completions", "GET /v1/models", "Auth: Authorization: Bearer"] },
             { title: "Anthropic Claude", icon: claudeIcon.src, tag: "Compatible", rows: ["POST /v1/messages", "Stream: content_block_delta", "Auth: x-api-key"] },
           ].map((provider) => (
-            <div key={provider.title} className="rounded-lg border bg-background p-4">
+            <div key={provider.title} className="min-w-0 rounded-lg border bg-background p-4">
               <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <img src={provider.icon} alt="" className="size-8 object-contain" />
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-semibold">{provider.title}</div>
-                    <div className="text-xs text-muted-foreground">{provider.rows[2]}</div>
+                    <div className="break-words text-xs text-muted-foreground">{provider.rows[2]}</div>
                   </div>
                 </div>
                 <Badge variant={provider.tag === "Native" ? "success" : "secondary"}>{provider.tag}</Badge>
               </div>
               <Separator className="my-4" />
               <div className="flex flex-col gap-2 text-xs text-muted-foreground">
-                {provider.rows.slice(0, 2).map((row) => <code key={row}>{row}</code>)}
+                {provider.rows.slice(0, 2).map((row) => <code key={row} className="block whitespace-normal break-all">{row}</code>)}
               </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Account Affinity</CardTitle>
+          <CardDescription>Keep multi-turn agent tasks on one upstream Google account for better context continuity.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid min-w-0 gap-3 lg:grid-cols-3">
+          {[
+            ["Session", "x-opengem-session-id", "Use a stable thread or chat id."],
+            ["Task", "x-opengem-task-id", "Use a stable automated task id."],
+            ["Disable", "x-opengem-affinity: off", "Bypass sticky routing for one request."],
+          ].map(([title, header, detail]) => (
+            <div key={title} className="min-w-0 rounded-lg border bg-background p-4">
+              <div className="text-sm font-semibold">{title}</div>
+              <code className="mt-2 block whitespace-normal break-all rounded-md bg-muted px-2 py-1 text-xs">{header}</code>
+              <div className="mt-2 text-xs text-muted-foreground">{detail}</div>
             </div>
           ))}
         </CardContent>
@@ -1609,17 +1643,17 @@ function SettingsPage({ dbBackend, dbLoading, dbError, onRefreshDb, onSwitch, pr
           <CardTitle>API Compatibility</CardTitle>
           <CardDescription>Three live wire formats share the same hashed API key store.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-3">
+        <CardContent className="grid min-w-0 gap-3 lg:grid-cols-3">
           {[
             ["Gemini", geminiIcon.src, "POST /v1beta/models/{model}:generateContent"],
             ["OpenAI", openaiIcon.src, "POST /v1/chat/completions · GET /v1/models"],
             ["Anthropic Claude", claudeIcon.src, "POST /v1/messages"],
           ].map(([title, icon, endpoint]) => (
-            <div key={title} className="flex items-center gap-3 rounded-lg border bg-background p-3">
+            <div key={title} className="flex min-w-0 items-center gap-3 rounded-lg border bg-background p-3">
               <img src={icon} alt="" className="size-8 object-contain" />
               <div className="min-w-0">
                 <div className="font-medium">{title}</div>
-                <code className="block truncate text-xs text-muted-foreground">{endpoint}</code>
+                <code className="block whitespace-normal break-all text-xs text-muted-foreground">{endpoint}</code>
               </div>
             </div>
           ))}
@@ -1638,7 +1672,7 @@ function SettingsPage({ dbBackend, dbLoading, dbError, onRefreshDb, onSwitch, pr
               {dbLoading ? "Loading..." : dbBackend || "-"}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={onRefreshDb} disabled={dbLoading}>
               <RefreshCcw className={cn(dbLoading && "animate-spin")} data-icon="inline-start" />
               Refresh
@@ -1658,7 +1692,7 @@ function SettingsPage({ dbBackend, dbLoading, dbError, onRefreshDb, onSwitch, pr
             <Input placeholder="New username" value={credForm.newUsername} onChange={(event) => setCredForm((prev) => ({ ...prev, newUsername: event.target.value }))} required />
             <Input type="password" placeholder="New password" value={credForm.newPassword} onChange={(event) => setCredForm((prev) => ({ ...prev, newPassword: event.target.value }))} required />
             <Input type="password" placeholder="Confirm new password" value={credForm.confirmPassword} onChange={(event) => setCredForm((prev) => ({ ...prev, confirmPassword: event.target.value }))} required />
-            <div className="flex flex-col gap-2 md:col-span-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-2 md:col-span-2 md:flex-row md:flex-wrap md:items-center md:justify-between">
               <div className={cn("min-h-5 text-sm", credStatus.includes("updated") ? "text-accent-foreground" : "text-muted-foreground")}>{credStatus}</div>
               <Button type="submit">Update Credentials</Button>
             </div>
@@ -1688,7 +1722,7 @@ function LogDetailDialog({ log, privacyMode, onOpenChange }) {
   const open = Boolean(log);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto" onOpenAutoFocus={(event) => event.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Request Log Detail</DialogTitle>
           <DialogDescription>Full prompt, response, model and token metadata.</DialogDescription>
@@ -1700,7 +1734,10 @@ function LogDetailDialog({ log, privacyMode, onOpenChange }) {
               <Meta label="Account" value={censorEmail(log.accountEmail, privacyMode)} />
               <Meta label="Status" value={log.success ? "Success" : "Error"} />
               <Meta label="Tokens" value={formatNumber(log.tokensUsed)} />
+              {log.effectiveTokensUsed !== undefined ? <Meta label="Effective Tokens" value={formatNumber(log.effectiveTokensUsed)} /> : null}
               {log.model ? <Meta label="Model" value={`${String(log.model).replace("models/", "")}${log.isFallback ? " · Fallback" : ""}`} /> : null}
+              {log.affinitySource ? <Meta label="Affinity" value={`${log.affinitySource}${log.affinityHit ? " · Hit" : ""}${log.affinityRebound ? " · Rebound" : ""}`} /> : null}
+              {log.affinityKeyHash ? <Meta label="Affinity Key" value={String(log.affinityKeyHash).slice(0, 16)} /> : null}
             </div>
             {log.systemInstruction ? <TextPanel title="System Prompt" text={log.systemInstruction} /> : null}
             <TextPanel title="Question" text={log.question || "-"} />

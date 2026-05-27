@@ -17,6 +17,7 @@ import crypto from 'crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { encrypt, decrypt } from './config';
 import type { IDatabase, Account, ApiKey, RequestLog, DbStats } from './database';
+import { mergeEffectiveTokenStats } from './token-stats';
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const SQLITE_PATH = path.join(DATA_DIR, 'db.sqlite');
@@ -83,12 +84,20 @@ function getDb(): DatabaseSync {
             systemInstruction TEXT,
             model             TEXT,
             isFallback        INTEGER,
+            affinityKeyHash   TEXT,
+            affinitySource    TEXT,
+            affinityHit       INTEGER,
+            affinityRebound   INTEGER,
+            promptTokens      INTEGER,
+            completionTokens  INTEGER,
+            effectiveTokensUsed INTEGER,
             tokensUsed        INTEGER NOT NULL DEFAULT 0,
             success           INTEGER NOT NULL DEFAULT 1,
             timestamp         TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON request_logs(timestamp DESC);
     `);
+    ensureRequestLogAffinityColumns(db);
     _db = db;
 
     // One-shot migration from legacy JSON, if present.
@@ -216,6 +225,24 @@ function trimLogs(db: DatabaseSync): void {
             LIMIT (SELECT COUNT(*) FROM request_logs) - ${MAX_LOG_ROWS}
         )
     `);
+}
+
+function ensureRequestLogAffinityColumns(db: DatabaseSync): void {
+    const columns = new Set(
+        (db.prepare('PRAGMA table_info(request_logs)').all() as any[])
+            .map(row => String(row.name)),
+    );
+    const addColumn = (name: string, definition: string) => {
+        if (!columns.has(name)) db.exec(`ALTER TABLE request_logs ADD COLUMN ${name} ${definition}`);
+    };
+
+    addColumn('affinityKeyHash', 'TEXT');
+    addColumn('affinitySource', 'TEXT');
+    addColumn('affinityHit', 'INTEGER');
+    addColumn('affinityRebound', 'INTEGER');
+    addColumn('promptTokens', 'INTEGER');
+    addColumn('completionTokens', 'INTEGER');
+    addColumn('effectiveTokensUsed', 'INTEGER');
 }
 
 // --- Helpers --------------------------------------------------------------
@@ -456,8 +483,10 @@ export const sqliteDb: IDatabase = {
         db.prepare(`
             INSERT INTO request_logs (
                 id, accountEmail, question, answer, systemInstruction, model,
-                isFallback, tokensUsed, success, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                isFallback, affinityKeyHash, affinitySource, affinityHit,
+                affinityRebound, promptTokens, completionTokens, effectiveTokensUsed,
+                tokensUsed, success, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
             generateId(),
             log.accountEmail ?? null,
@@ -466,6 +495,13 @@ export const sqliteDb: IDatabase = {
             log.systemInstruction ?? null,
             log.model ?? null,
             log.isFallback === undefined ? null : (log.isFallback ? 1 : 0),
+            log.affinityKeyHash ?? null,
+            log.affinitySource ?? null,
+            log.affinityHit === undefined ? null : (log.affinityHit ? 1 : 0),
+            log.affinityRebound === undefined ? null : (log.affinityRebound ? 1 : 0),
+            log.promptTokens ?? null,
+            log.completionTokens ?? null,
+            log.effectiveTokensUsed ?? null,
             log.tokensUsed ?? 0,
             log.success === false ? 0 : 1,
             toIso(log.timestamp, new Date().toISOString()),
@@ -486,6 +522,13 @@ export const sqliteDb: IDatabase = {
             ...(r.systemInstruction && { systemInstruction: r.systemInstruction }),
             ...(r.model && { model: r.model }),
             ...(r.isFallback !== null && r.isFallback !== undefined && { isFallback: !!r.isFallback }),
+            ...(r.affinityKeyHash && { affinityKeyHash: r.affinityKeyHash }),
+            ...(r.affinitySource && { affinitySource: r.affinitySource }),
+            ...(r.affinityHit !== null && r.affinityHit !== undefined && { affinityHit: !!r.affinityHit }),
+            ...(r.affinityRebound !== null && r.affinityRebound !== undefined && { affinityRebound: !!r.affinityRebound }),
+            ...(r.promptTokens !== null && r.promptTokens !== undefined && { promptTokens: r.promptTokens }),
+            ...(r.completionTokens !== null && r.completionTokens !== undefined && { completionTokens: r.completionTokens }),
+            ...(r.effectiveTokensUsed !== null && r.effectiveTokensUsed !== undefined && { effectiveTokensUsed: r.effectiveTokensUsed }),
             tokensUsed: r.tokensUsed || 0,
             success: !!r.success,
             timestamp: new Date(r.timestamp),
@@ -496,17 +539,18 @@ export const sqliteDb: IDatabase = {
 
     async getStats(): Promise<DbStats> {
         const all = await this.getAllAccounts();
-        let totalRequests = 0, successfulRequests = 0, failedRequests = 0, totalTokensUsed = 0, activeAccounts = 0;
+        const logs = await this.getRecentLogs(MAX_LOG_ROWS);
+        const tokenStats = mergeEffectiveTokenStats(all, logs);
+        let totalRequests = 0, successfulRequests = 0, failedRequests = 0, activeAccounts = 0;
 
         const accountStats = all.map(acc => {
             const t = acc.totalRequests || 0;
             const s = acc.successfulRequests || 0;
             const f = acc.failedRequests || 0;
-            const tk = acc.totalTokensUsed || 0;
+            const tk = tokenStats.byAccount[acc.email] || 0;
             totalRequests += t;
             successfulRequests += s;
             failedRequests += f;
-            totalTokensUsed += tk;
             if (acc.isActive) activeAccounts++;
             return {
                 email: acc.email,
@@ -523,7 +567,7 @@ export const sqliteDb: IDatabase = {
             totalRequests,
             successfulRequests,
             failedRequests,
-            totalTokensUsed,
+            totalTokensUsed: tokenStats.totalTokensUsed,
             activeAccounts,
             totalAccounts: all.length,
             accountStats,

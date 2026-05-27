@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { getConfig, encrypt, decrypt } from './config';
 import type { IDatabase, Account, ApiKey, RequestLog, DbStats } from './database';
+import { mergeEffectiveTokenStats } from './token-stats';
 import crypto from 'crypto';
 
 // Polyfill fetch for Firebase if needed (especially for Node.js environments lacking global fetch)
@@ -295,6 +296,13 @@ export const firebaseDb: IDatabase = {
             ...(log.systemInstruction && { systemInstruction: log.systemInstruction }),
             ...(log.model && { model: log.model }),
             ...(log.isFallback !== undefined && { isFallback: log.isFallback }),
+            ...(log.affinityKeyHash && { affinityKeyHash: log.affinityKeyHash }),
+            ...(log.affinitySource && { affinitySource: log.affinitySource }),
+            ...(log.affinityHit !== undefined && { affinityHit: log.affinityHit }),
+            ...(log.affinityRebound !== undefined && { affinityRebound: log.affinityRebound }),
+            ...(log.promptTokens !== undefined && { promptTokens: log.promptTokens }),
+            ...(log.completionTokens !== undefined && { completionTokens: log.completionTokens }),
+            ...(log.effectiveTokensUsed !== undefined && { effectiveTokensUsed: log.effectiveTokensUsed }),
             tokensUsed: log.tokensUsed,
             success: log.success ?? true, // default to true if undefined for older code
             timestamp: new Date()
@@ -316,6 +324,13 @@ export const firebaseDb: IDatabase = {
                 ...(data.systemInstruction && { systemInstruction: data.systemInstruction }),
                 ...(data.model && { model: data.model }),
                 ...(data.isFallback !== undefined && { isFallback: data.isFallback }),
+                ...(data.affinityKeyHash && { affinityKeyHash: data.affinityKeyHash }),
+                ...(data.affinitySource && { affinitySource: data.affinitySource }),
+                ...(data.affinityHit !== undefined && { affinityHit: data.affinityHit }),
+                ...(data.affinityRebound !== undefined && { affinityRebound: data.affinityRebound }),
+                ...(data.promptTokens !== undefined && { promptTokens: data.promptTokens }),
+                ...(data.completionTokens !== undefined && { completionTokens: data.completionTokens }),
+                ...(data.effectiveTokensUsed !== undefined && { effectiveTokensUsed: data.effectiveTokensUsed }),
                 tokensUsed: data.tokensUsed || 0,
                 success: data.success,
                 timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : new Date(data.timestamp)
@@ -345,23 +360,23 @@ export const firebaseDb: IDatabase = {
         }>;
     }> {
         const accounts = await this.getAllAccounts();
+        const logs = await this.getRecentLogs(5000);
+        const tokenStats = mergeEffectiveTokenStats(accounts, logs);
 
         let totalRequests = 0;
         let successfulRequests = 0;
         let failedRequests = 0;
-        let totalTokensUsed = 0;
         let activeAccounts = 0;
 
         const accountStats = accounts.map(acc => {
             const accTotal = acc.totalRequests || 0;
             const accSuccess = acc.successfulRequests || 0;
             const accFailed = acc.failedRequests || 0;
-            const accTokens = acc.totalTokensUsed || 0;
+            const accTokens = tokenStats.byAccount[acc.email] || 0;
 
             totalRequests += accTotal;
             successfulRequests += accSuccess;
             failedRequests += accFailed;
-            totalTokensUsed += accTokens;
             if (acc.isActive) activeAccounts++;
 
             return {
@@ -379,7 +394,7 @@ export const firebaseDb: IDatabase = {
             totalRequests,
             successfulRequests,
             failedRequests,
-            totalTokensUsed,
+            totalTokensUsed: tokenStats.totalTokensUsed,
             activeAccounts,
             totalAccounts: accounts.length,
             accountStats
