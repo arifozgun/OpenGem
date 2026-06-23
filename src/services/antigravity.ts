@@ -15,7 +15,10 @@ export const DEFAULT_MODEL = 'gemini-3-flash-agent';      // Primary model (hard
 export const OAUTH_CONFIG = {
     clientId: ANTIGRAVITY_CLI_CREDENTIALS.clientId,
     clientSecret: ANTIGRAVITY_CLI_CREDENTIALS.clientSecret,
-    redirectUri: process.env.OAUTH_REDIRECT_URI || 'http://127.0.0.1:3050/api/auth/callback',
+    // These are the Antigravity CLI's own (Desktop-app) OAuth credentials, so Google
+    // only accepts loopback redirect URIs (http://127.0.0.1:PORT / http://localhost:PORT).
+    // A custom domain can NOT be used here — it would trigger redirect_uri_mismatch.
+    redirectUri: process.env.OAUTH_REDIRECT_URI || `http://127.0.0.1:${process.env.PORT || 3050}/api/auth/callback`,
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
     userInfoUrl: 'https://www.googleapis.com/oauth2/v1/userinfo',

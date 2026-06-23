@@ -701,7 +701,7 @@ app.get('/api/auth/callback', async (req, res) => {
     authStates.delete(state as string);
 
     try {
-        // Exchange code
+        // Exchange code — uses the same redirect_uri sent during the login step
         const tokens = await exchangeCodeForTokens(code as string, verifier);
 
         // Discover project ID and Email

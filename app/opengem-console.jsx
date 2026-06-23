@@ -705,30 +705,40 @@ function MetricCard({ icon: Icon, label, value, tone = "primary" }) {
 
 function LogTimelineChart({ logs, label = "events" }) {
   const points = useMemo(() => {
+    const HOURS = 24;
+    const HOUR_MS = 60 * 60 * 1000;
+    const current = new Date();
+    current.setMinutes(0, 0, 0);
+    const start = current.getTime() - (HOURS - 1) * HOUR_MS;
+
+    // Pre-seed a fixed window of 24 hourly buckets so empty hours still render.
     const buckets = new Map();
+    for (let i = 0; i < HOURS; i += 1) {
+      buckets.set(start + i * HOUR_MS, 0);
+    }
+
     for (const log of logs || []) {
       const date = new Date(log.timestamp);
       if (Number.isNaN(date.getTime())) continue;
-      date.setSeconds(0, 0);
-      const key = date.toISOString();
-      buckets.set(key, (buckets.get(key) || 0) + 1);
+      date.setMinutes(0, 0, 0);
+      const key = date.getTime();
+      if (buckets.has(key)) buckets.set(key, buckets.get(key) + 1);
     }
-    return [...buckets.entries()]
-      .sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime())
-      .slice(-18)
-      .map(([key, count]) => ({
-        key,
-        count,
-        label: new Date(key).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-      }));
+
+    return [...buckets.entries()].map(([key, count]) => ({
+      key,
+      count,
+      label: new Date(key).toLocaleTimeString("en-US", { hour: "2-digit" }),
+    }));
   }, [logs]);
   const max = Math.max(1, ...points.map((point) => point.count));
+  const total = points.reduce((sum, point) => sum + point.count, 0);
 
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle>Timeline</CardTitle>
-        <CardDescription>{formatNumber(logs?.length || 0)} {label} in the current view</CardDescription>
+        <CardDescription>{formatNumber(total)} {label} in the last 24 hours</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex h-36 items-end gap-2 overflow-x-auto">
@@ -743,7 +753,7 @@ function LogTimelineChart({ logs, label = "events" }) {
                   <div className="text-center text-[10px] text-muted-foreground">{point.label}</div>
                 </div>
               </TooltipTrigger>
-              <TooltipContent>{point.count} {label} at {point.label}</TooltipContent>
+              <TooltipContent>{point.count} {label} around {point.label}</TooltipContent>
             </Tooltip>
           )) : (
             <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">No log activity yet.</div>

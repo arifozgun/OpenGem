@@ -4,6 +4,10 @@ dist
 out
 .agents
 project_preview
+.claude
+
+# TypeScript incremental build cache
+*.tsbuildinfo
 
 # Keep environment variables out of version control
 .env
