@@ -1,9 +1,9 @@
 import fs from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
+import { getConfigPath, getRuntimeEnvPath } from './paths';
 
-const CONFIG_PATH = path.join(__dirname, '../../config.json');
+const CONFIG_PATH = getConfigPath();
 
 // --- Encryption Constants ---
 const ENCRYPTION_PREFIX = 'enc:v1:';
@@ -32,12 +32,35 @@ export interface AppConfig {
     admin: {
         username: string;
         password: string;
+        sessionVersion?: string;
     };
     jwtSecret: string;
     setupCompleted: boolean;
     setupCompletedAt?: string;
     /** Which database backend to use. Defaults to 'firebase' for backward compat. */
     dbBackend?: 'firebase' | 'local';
+    smtp?: SmtpConfig;
+    logging?: LoggingConfig;
+}
+
+export interface SmtpConfig {
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    password: string;
+    fromEmail: string;
+    toEmail: string;
+}
+
+export interface LogPageConfig {
+    maxDaysRetention: number;
+    enableIpLogging: boolean;
+}
+
+export interface LoggingConfig {
+    requests: LogPageConfig;
+    logs: LogPageConfig;
 }
 
 // The raw JSON shape on disk (encrypted values are strings)
@@ -54,16 +77,42 @@ interface EncryptedConfig {
     admin: {
         username: string; // bcrypt hash
         password: string; // bcrypt hash
+        sessionVersion?: string;
     };
     jwtSecret: string; // AES-256-GCM encrypted
     setupCompleted: boolean;
     setupCompletedAt?: string;
     dbBackend?: 'firebase' | 'local';
+    smtp?: {
+        host: string;
+        port: number;
+        secure: boolean;
+        username: string;
+        password: string;
+        fromEmail: string;
+        toEmail: string;
+    };
+    logging?: {
+        requests?: Partial<LogPageConfig>;
+        logs?: Partial<LogPageConfig>;
+    };
 }
+
+const DEFAULT_LOGGING_CONFIG: LoggingConfig = {
+    requests: {
+        maxDaysRetention: 30,
+        enableIpLogging: false,
+    },
+    logs: {
+        maxDaysRetention: 14,
+        enableIpLogging: false,
+    },
+};
 
 // --- Encryption Key Management ---
 
 let _derivedKey: Buffer | null = null;
+let _fallbackAdminSessionVersion: string | null = null;
 
 function getEncryptionKey(): Buffer {
     if (_derivedKey) return _derivedKey;
@@ -73,7 +122,7 @@ function getEncryptionKey(): Buffer {
     if (!masterKey) {
         // Auto-generate and persist to .env if not present
         masterKey = crypto.randomBytes(64).toString('hex');
-        const envPath = path.join(__dirname, '../../.env');
+        const envPath = getRuntimeEnvPath();
         let envContent = '';
         if (fs.existsSync(envPath)) {
             envContent = fs.readFileSync(envPath, 'utf-8');
@@ -152,6 +201,77 @@ function isBcryptHash(value: string): boolean {
     return value.startsWith(BCRYPT_PREFIX);
 }
 
+function normalizeRetentionDays(value: unknown, fallback: number): number {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(365, Math.max(1, Math.floor(number)));
+}
+
+function normalizePort(value: unknown, fallback: number): number {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(65535, Math.max(1, Math.floor(number)));
+}
+
+function normalizeLoggingConfig(logging?: EncryptedConfig['logging'] | LoggingConfig): LoggingConfig {
+    return {
+        requests: {
+            maxDaysRetention: normalizeRetentionDays(
+                logging?.requests?.maxDaysRetention,
+                DEFAULT_LOGGING_CONFIG.requests.maxDaysRetention,
+            ),
+            enableIpLogging: Boolean(logging?.requests?.enableIpLogging),
+        },
+        logs: {
+            maxDaysRetention: normalizeRetentionDays(
+                logging?.logs?.maxDaysRetention,
+                DEFAULT_LOGGING_CONFIG.logs.maxDaysRetention,
+            ),
+            enableIpLogging: Boolean(logging?.logs?.enableIpLogging),
+        },
+    };
+}
+
+function encryptSmtpConfig(smtp: SmtpConfig): EncryptedConfig['smtp'] {
+    return {
+        host: encrypt(smtp.host),
+        port: smtp.port,
+        secure: Boolean(smtp.secure),
+        username: encrypt(smtp.username),
+        password: encrypt(smtp.password),
+        fromEmail: encrypt(smtp.fromEmail),
+        toEmail: encrypt(smtp.toEmail),
+    };
+}
+
+function decryptSmtpConfig(smtp?: EncryptedConfig['smtp']): SmtpConfig | undefined {
+    if (!smtp) return undefined;
+    const decrypted = {
+        host: decrypt(smtp.host),
+        port: normalizePort(smtp.port, 587),
+        secure: Boolean(smtp.secure),
+        username: decrypt(smtp.username),
+        password: decrypt(smtp.password),
+        fromEmail: decrypt(smtp.fromEmail),
+        toEmail: decrypt(smtp.toEmail),
+    };
+    if (!decrypted.host || !decrypted.username || !decrypted.password || !decrypted.toEmail) {
+        return undefined;
+    }
+    return decrypted;
+}
+
+function smtpNeedsMigration(smtp?: EncryptedConfig['smtp']): boolean {
+    if (!smtp) return false;
+    return [smtp.host, smtp.username, smtp.password, smtp.fromEmail, smtp.toEmail]
+        .filter(Boolean)
+        .some(value => !isEncrypted(String(value)));
+}
+
+export function getDefaultLoggingConfig(): LoggingConfig {
+    return JSON.parse(JSON.stringify(DEFAULT_LOGGING_CONFIG));
+}
+
 // --- Config Read / Write ---
 
 export function isConfigured(): boolean {
@@ -206,29 +326,37 @@ export function getConfig(): AppConfig {
     if (!isEncrypted(encrypted.jwtSecret)) {
         needsMigration = true;
     }
+    if (smtpNeedsMigration(encrypted.smtp)) {
+        needsMigration = true;
+    }
 
-    // Admin credentials stay as bcrypt hashes — they are verified via bcrypt.compare
-    // But check if username needs hashing
+    // Admin credentials stay as bcrypt hashes — they are verified via bcrypt.compare.
+    // A sessionVersion rotates all outstanding admin JWTs after credential changes.
+    const sessionVersion = encrypted.admin.sessionVersion || (_fallbackAdminSessionVersion ||= generateSessionVersion());
     if (!isBcryptHash(encrypted.admin.username)) {
         needsMigration = true;
     }
+    if (!encrypted.admin.sessionVersion) needsMigration = true;
 
     const config: AppConfig = {
         firebase,
         admin: {
             username: encrypted.admin.username, // bcrypt hash (or plaintext if migration needed)
             password: encrypted.admin.password, // bcrypt hash
+            sessionVersion,
         },
         jwtSecret,
         setupCompleted: encrypted.setupCompleted,
         setupCompletedAt: encrypted.setupCompletedAt,
         dbBackend,
+        smtp: decryptSmtpConfig(encrypted.smtp),
+        logging: normalizeLoggingConfig(encrypted.logging),
     };
 
     // Auto-migrate plaintext config to encrypted format
     if (needsMigration && encrypted.setupCompleted) {
         console.log('🔄 Migrating config.json to encrypted format...');
-        migrateConfig(encrypted);
+        migrateConfig(encrypted, sessionVersion);
     }
 
     return config;
@@ -237,7 +365,7 @@ export function getConfig(): AppConfig {
 /**
  * Migrates a plaintext or partially encrypted config to fully encrypted format.
  */
-async function migrateConfig(raw: EncryptedConfig): Promise<void> {
+async function migrateConfig(raw: EncryptedConfig, sessionVersion: string): Promise<void> {
     try {
         const encryptedConfig: EncryptedConfig = {
             firebase: raw.firebase ? {
@@ -254,11 +382,22 @@ async function migrateConfig(raw: EncryptedConfig): Promise<void> {
             admin: {
                 username: isBcryptHash(raw.admin.username) ? raw.admin.username : await bcrypt.hash(raw.admin.username, 12),
                 password: isBcryptHash(raw.admin.password) ? raw.admin.password : await bcrypt.hash(raw.admin.password, 12),
+                sessionVersion,
             },
             jwtSecret: isEncrypted(raw.jwtSecret) ? raw.jwtSecret : encrypt(raw.jwtSecret),
             setupCompleted: raw.setupCompleted,
             setupCompletedAt: raw.setupCompletedAt,
             dbBackend: raw.dbBackend || 'firebase',
+            smtp: raw.smtp ? {
+                host: isEncrypted(raw.smtp.host || '') ? raw.smtp.host : encrypt(raw.smtp.host || ''),
+                port: normalizePort(raw.smtp.port, 587),
+                secure: Boolean(raw.smtp.secure),
+                username: isEncrypted(raw.smtp.username || '') ? raw.smtp.username : encrypt(raw.smtp.username || ''),
+                password: isEncrypted(raw.smtp.password || '') ? raw.smtp.password : encrypt(raw.smtp.password || ''),
+                fromEmail: isEncrypted(raw.smtp.fromEmail || '') ? raw.smtp.fromEmail : encrypt(raw.smtp.fromEmail || ''),
+                toEmail: isEncrypted(raw.smtp.toEmail || '') ? raw.smtp.toEmail : encrypt(raw.smtp.toEmail || ''),
+            } : undefined,
+            logging: normalizeLoggingConfig(raw.logging),
         };
 
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(encryptedConfig, null, 2), 'utf-8');
@@ -286,11 +425,14 @@ export function saveConfig(config: AppConfig): void {
         admin: {
             username: config.admin.username, // Already bcrypt hashed by caller
             password: config.admin.password, // Already bcrypt hashed by caller
+            sessionVersion: config.admin.sessionVersion || generateSessionVersion(),
         },
         jwtSecret: encrypt(config.jwtSecret),
         setupCompleted: config.setupCompleted,
         setupCompletedAt: config.setupCompletedAt,
         dbBackend: config.dbBackend || 'firebase',
+        smtp: config.smtp ? encryptSmtpConfig(config.smtp) : undefined,
+        logging: normalizeLoggingConfig(config.logging),
     };
 
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(encryptedConfig, null, 2), 'utf-8');
@@ -326,10 +468,58 @@ export function switchDatabaseBackend(
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2), 'utf-8');
 }
 
+export function getLoggingConfig(): LoggingConfig {
+    try {
+        return normalizeLoggingConfig(getConfig().logging);
+    } catch {
+        return getDefaultLoggingConfig();
+    }
+}
+
+export function isSmtpConfigured(config: AppConfig = getConfig()): boolean {
+    const smtp = config.smtp;
+    return Boolean(
+        smtp?.host?.trim() &&
+        smtp?.port &&
+        smtp?.username?.trim() &&
+        smtp?.password &&
+        smtp?.toEmail?.trim()
+    );
+}
+
+export function updateSecuritySettings(settings: { smtp?: SmtpConfig | null; logging?: LoggingConfig }): void {
+    if (!fs.existsSync(CONFIG_PATH)) {
+        throw new Error('Config not found.');
+    }
+    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) as EncryptedConfig;
+
+    if (settings.smtp !== undefined) {
+        if (settings.smtp === null) {
+            delete raw.smtp;
+        } else {
+            raw.smtp = encryptSmtpConfig({
+                ...settings.smtp,
+                port: normalizePort(settings.smtp.port, 587),
+                secure: Boolean(settings.smtp.secure),
+            });
+        }
+    }
+
+    if (settings.logging !== undefined) {
+        raw.logging = normalizeLoggingConfig(settings.logging);
+    }
+
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2), 'utf-8');
+}
+
 // --- Utility Functions ---
 
 export function generateJwtSecret(): string {
     return crypto.randomBytes(64).toString('hex');
+}
+
+export function generateSessionVersion(): string {
+    return crypto.randomBytes(32).toString('hex');
 }
 
 export function generateApiKey(): string {
@@ -370,5 +560,6 @@ export function updateAdminCredentials(hashedUsername: string, hashedPassword: s
     raw.admin = raw.admin || {};
     raw.admin.username = hashedUsername;
     raw.admin.password = hashedPassword;
+    raw.admin.sessionVersion = generateSessionVersion();
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2), 'utf-8');
 }

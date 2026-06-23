@@ -1,13 +1,24 @@
 {
   "name": "opengem",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Free, open-source AI API gateway for Gemini, OpenAI and Anthropic — educational and research use",
   "main": "app.js",
+  "files": [
+    "app.js",
+    "dist",
+    "out",
+    "public",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "clean": "node -e \"const fs=require('fs'); for (const dir of ['dist','out']) fs.rmSync(dir,{recursive:true,force:true});\"",
     "dev": "nodemon --exec \"ts-node -P tsconfig.server.json\" src/index.ts",
-    "build": "npm run build:server && npm run build:web",
+    "build": "npm run clean && npm run build:server && npm run build:web",
     "build:server": "tsc -p tsconfig.server.json",
     "build:web": "next build --webpack",
+    "prepack": "npm run build",
     "start": "node app.js"
   },
   "keywords": [
@@ -51,7 +62,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.2.1",
+    "express-rate-limit": "^8.5.2",
     "firebase": "^12.9.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
@@ -59,6 +70,7 @@
     "marked": "^17.0.1",
     "next": "^16.2.6",
     "node-fetch": "^2.7.0",
+    "nodemailer": "^8.0.10",
     "radix-ui": "^1.4.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -73,9 +85,18 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.3.0",
+    "@types/nodemailer": "^8.0.0",
     "@types/react": "19.2.15",
-    "nodemon": "^3.1.11",
+    "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "@protobufjs/utf8": "1.1.1",
+    "path-to-regexp": "8.4.2",
+    "picomatch": "2.3.2",
+    "postcss": "8.5.15",
+    "protobufjs": "7.6.2",
+    "qs": "6.15.2"
   }
 }

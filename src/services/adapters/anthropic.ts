@@ -46,6 +46,7 @@ export interface AnthropicMessageRequest {
         | { type: 'none' }
         | { type: 'tool'; name: string };
     metadata?: { user_id?: string };
+    session_id?: string;
 }
 
 export interface AnthropicMessage {
@@ -152,6 +153,9 @@ export function translateAnthropicRequest(req: AnthropicMessageRequest): GeminiT
                         if (src?.type === 'base64' && src.data) {
                             parts.push({ inlineData: { mimeType: src.media_type || 'image/png', data: src.data } });
                         } else if (src?.type === 'url' && src.url) {
+                            if (!/^https?:\/\//i.test(src.url)) {
+                                throw new AnthropicRequestError(400, 'invalid_request_error', 'Only http and https image URLs are supported.');
+                            }
                             parts.push({ fileData: { fileUri: src.url, mimeType: 'image/*' } });
                         }
                         break;

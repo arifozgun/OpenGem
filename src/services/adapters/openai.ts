@@ -29,7 +29,8 @@ import {
 // ─── Public types ────────────────────────────────────────────────────────────
 
 export interface OpenAIChatRequest {
-    model: string;
+    model?: string;
+    models?: string[];
     messages: OpenAIMessage[];
     stream?: boolean;
     temperature?: number;
@@ -45,6 +46,14 @@ export interface OpenAIChatRequest {
     tool_choice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } };
     seed?: number;
     user?: string;
+    session_id?: string;
+    metadata?: Record<string, string>;
+    provider?: Record<string, any>;
+    route?: any;
+    reasoning?: Record<string, any>;
+    service_tier?: string;
+    safety_identifier?: string;
+    parallel_tool_calls?: boolean;
     stream_options?: { include_usage?: boolean };
 }
 
@@ -58,7 +67,8 @@ export interface OpenAIMessage {
 
 export type OpenAIContentPart =
     | { type: 'text'; text: string }
-    | { type: 'image_url'; image_url: { url: string; detail?: string } }
+    | { type: 'input_text'; text: string }
+    | { type: 'image_url'; image_url: { url: string; detail?: string } | string }
     | { type: 'input_audio'; input_audio: { data: string; format: string } };
 
 export interface GeminiTranslated {
@@ -102,16 +112,20 @@ function partsFromContent(content: OpenAIMessage['content']): any[] {
     for (const part of content) {
         if (!part || typeof part !== 'object') continue;
         switch (part.type) {
-            case 'text': {
+            case 'text':
+            case 'input_text': {
                 if (typeof part.text === 'string' && part.text.length > 0) parts.push({ text: part.text });
                 break;
             }
             case 'image_url': {
-                const url = part.image_url?.url ?? '';
+                const url = typeof part.image_url === 'string' ? part.image_url : part.image_url?.url ?? '';
                 const dataMatch = url.match(/^data:([^;,]+);base64,(.+)$/i);
                 if (dataMatch) {
                     parts.push({ inlineData: { mimeType: dataMatch[1], data: dataMatch[2] } });
                 } else if (url.length > 0) {
+                    if (!/^https?:\/\//i.test(url)) {
+                        throw new OpenAIRequestError(400, 'invalid_request_error', 'Only data, http, and https image URLs are supported.');
+                    }
                     // Gemini supports remote file URIs via fileData. For privacy / security we
                     // forward the URI verbatim; we do NOT fetch it server-side.
                     parts.push({ fileData: { fileUri: url, mimeType: 'image/*' } });
@@ -131,6 +145,15 @@ function safeJsonParse(text: string): any {
     try { return JSON.parse(text); } catch { return undefined; }
 }
 
+function pickRequestedModel(req: OpenAIChatRequest): string | undefined {
+    if (typeof req.model === 'string' && req.model.trim()) return req.model.trim();
+    if (Array.isArray(req.models)) {
+        const first = req.models.find(model => typeof model === 'string' && model.trim());
+        if (first) return first.trim();
+    }
+    return undefined;
+}
+
 export function translateOpenAIRequest(req: OpenAIChatRequest): GeminiTranslated {
     if (!req || typeof req !== 'object') {
         throw new OpenAIRequestError(400, 'invalid_request_error', 'Request body must be a JSON object.');
@@ -138,7 +161,8 @@ export function translateOpenAIRequest(req: OpenAIChatRequest): GeminiTranslated
     if (!Array.isArray(req.messages) || req.messages.length === 0) {
         throw new OpenAIRequestError(400, 'invalid_request_error', '`messages` must be a non-empty array.');
     }
-    if (typeof req.model !== 'string' || req.model.length === 0) {
+    const requestedModel = pickRequestedModel(req);
+    if (!requestedModel) {
         throw new OpenAIRequestError(400, 'invalid_request_error', '`model` is required.');
     }
 
@@ -156,7 +180,7 @@ export function translateOpenAIRequest(req: OpenAIChatRequest): GeminiTranslated
             case 'developer': {
                 if (typeof msg.content === 'string') systemTexts.push(msg.content);
                 else if (Array.isArray(msg.content)) {
-                    for (const c of msg.content) if (c?.type === 'text' && c.text) systemTexts.push(c.text);
+                    for (const c of msg.content) if ((c?.type === 'text' || c?.type === 'input_text') && c.text) systemTexts.push(c.text);
                 }
                 break;
             }
@@ -173,7 +197,10 @@ export function translateOpenAIRequest(req: OpenAIChatRequest): GeminiTranslated
                 const text = typeof msg.content === 'string'
                     ? msg.content
                     : Array.isArray(msg.content)
-                        ? msg.content.filter((c): c is { type: 'text'; text: string } => c?.type === 'text').map(c => c.text).join('')
+                        ? msg.content
+                            .filter((c): c is { type: 'text' | 'input_text'; text: string } => c?.type === 'text' || c?.type === 'input_text')
+                            .map(c => c.text)
+                            .join('')
                         : '';
                 if (text) parts.push({ text });
 
@@ -198,7 +225,10 @@ export function translateOpenAIRequest(req: OpenAIChatRequest): GeminiTranslated
                 const rawText = typeof msg.content === 'string'
                     ? msg.content
                     : Array.isArray(msg.content)
-                        ? msg.content.filter((c): c is { type: 'text'; text: string } => c?.type === 'text').map(c => c.text).join('')
+                        ? msg.content
+                            .filter((c): c is { type: 'text' | 'input_text'; text: string } => c?.type === 'text' || c?.type === 'input_text')
+                            .map(c => c.text)
+                            .join('')
                         : '';
                 const parsed = safeJsonParse(rawText);
                 const responseObj =
@@ -263,7 +293,7 @@ export function translateOpenAIRequest(req: OpenAIChatRequest): GeminiTranslated
     }
 
     return {
-        model: req.model,
+        model: requestedModel,
         contents,
         systemInstruction: systemTexts.length > 0 ? { parts: [{ text: systemTexts.join('\n\n') }] } : undefined,
         generationConfig: Object.keys(generationConfig).length > 0 ? generationConfig : undefined,

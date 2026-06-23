@@ -263,7 +263,7 @@ export function SetupWizard() {
                 {[
                   "Tokens are AES-256-GCM encrypted at rest",
                   "API keys are stored as SHA-256 hashes",
-                  "Logs are capped at 5,000 entries automatically",
+                  "Log retention can be tuned later from Settings",
                   "Back up data/db.sqlite periodically",
                 ].map((item) => (
                   <div key={item} className="flex items-center gap-3 rounded-lg border bg-background p-3 text-sm">

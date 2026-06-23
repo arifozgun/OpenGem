@@ -30,14 +30,16 @@
 
 :root {
   --radius: 0.5rem;
+  --highlight-color: #ea580c;
+  --highlight-foreground: #ffffff;
   --background: oklch(0.985 0.006 95);
   --foreground: oklch(0.18 0.018 255);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.18 0.018 255);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.18 0.018 255);
-  --primary: oklch(0.58 0.19 35);
-  --primary-foreground: oklch(0.99 0.01 95);
+  --primary: var(--highlight-color);
+  --primary-foreground: var(--highlight-foreground);
   --secondary: oklch(0.94 0.014 255);
   --secondary-foreground: oklch(0.22 0.026 255);
   --muted: oklch(0.94 0.014 255);
@@ -47,7 +49,29 @@
   --destructive: oklch(0.58 0.22 25);
   --border: oklch(0.88 0.015 255);
   --input: oklch(0.88 0.015 255);
-  --ring: oklch(0.58 0.19 35);
+  --ring: var(--highlight-color);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.16 0.018 255);
+  --foreground: oklch(0.94 0.012 255);
+  --card: oklch(0.2 0.018 255);
+  --card-foreground: oklch(0.94 0.012 255);
+  --popover: oklch(0.2 0.018 255);
+  --popover-foreground: oklch(0.94 0.012 255);
+  --primary: var(--highlight-color);
+  --primary-foreground: var(--highlight-foreground);
+  --secondary: oklch(0.27 0.021 255);
+  --secondary-foreground: oklch(0.92 0.012 255);
+  --muted: oklch(0.27 0.021 255);
+  --muted-foreground: oklch(0.68 0.026 255);
+  --accent: oklch(0.33 0.052 165);
+  --accent-foreground: oklch(0.93 0.04 160);
+  --destructive: oklch(0.62 0.22 25);
+  --border: oklch(0.32 0.022 255);
+  --input: oklch(0.32 0.022 255);
+  --ring: var(--highlight-color);
 }
 
 * {
@@ -120,7 +144,7 @@ pre {
 .markdown-body pre {
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: color-mix(in oklab, var(--muted) 58%, white);
+  background: color-mix(in oklab, var(--muted) 72%, var(--background));
   padding: 0.85rem;
   overflow-x: auto;
 }

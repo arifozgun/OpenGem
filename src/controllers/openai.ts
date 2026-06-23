@@ -17,6 +17,7 @@ import {
 } from '../services/adapters/openai';
 import { resolveCompatibilityModel, listCompatibilityModelIds } from '../services/adapters/model-aliases';
 import { createAccountAffinityContext } from '../services/account-affinity';
+import { getRequestLogMetadata } from '../services/access-log';
 import {
     generateContentWithAccounts,
     streamGeminiWithSink,
@@ -41,14 +42,18 @@ export async function handleOpenAIChatCompletions(req: Request, res: Response): 
 
     const requestedModel = translated.model;
     const geminiModel = resolveCompatibilityModel(requestedModel);
+    const body = req.body as OpenAIChatRequest;
+    const sessionId = typeof body?.session_id === 'string' ? body.session_id : undefined;
+    const metadataUserId = typeof body?.metadata?.user_id === 'string' ? body.metadata.user_id : undefined;
     const affinity = createAccountAffinityContext({
         req,
         model: requestedModel,
         contents: translated.contents,
         systemInstruction: translated.systemInstruction,
-        explicitUserId: typeof req.body?.user === 'string' ? req.body.user : undefined,
-        explicitUserSource: 'openai-user',
+        explicitUserId: sessionId || metadataUserId || (typeof body?.user === 'string' ? body.user : undefined),
+        explicitUserSource: sessionId ? 'openrouter-session' : 'openai-user',
     });
+    const requestMeta = () => getRequestLogMetadata(req);
 
     try {
         if (translated.stream) {
@@ -69,6 +74,7 @@ export async function handleOpenAIChatCompletions(req: Request, res: Response): 
                 res,
                 sink,
                 affinity,
+                requestMeta,
             });
             return;
         }
@@ -82,6 +88,7 @@ export async function handleOpenAIChatCompletions(req: Request, res: Response): 
             translated.toolConfig,
             undefined,
             affinity,
+            requestMeta,
         );
 
         if (!result) {
@@ -103,6 +110,22 @@ export async function handleOpenAIChatCompletions(req: Request, res: Response): 
 export function handleOpenAIListModels(_req: Request, res: Response): void {
     const ids = listCompatibilityModelIds();
     const created = Math.floor(Date.now() / 1000);
+    const supportedParameters = [
+        'messages',
+        'max_tokens',
+        'max_completion_tokens',
+        'temperature',
+        'top_p',
+        'stop',
+        'tools',
+        'tool_choice',
+        'response_format',
+        'stream',
+        'stream_options',
+        'models',
+        'provider',
+        'session_id',
+    ];
     res.json({
         object: 'list',
         data: ids.map((id: string) => ({
@@ -110,6 +133,8 @@ export function handleOpenAIListModels(_req: Request, res: Response): void {
             object: 'model',
             created,
             owned_by: 'opengem',
+            context_length: null,
+            supported_parameters: supportedParameters,
         })),
     });
 }

@@ -18,9 +18,46 @@ export interface RequestLog {
     promptTokens?: number;
     completionTokens?: number;
     effectiveTokensUsed?: number;
+    requestId?: string;
+    level?: 'info' | 'warn' | 'error';
+    method?: string;
+    url?: string;
+    userApi?: string;
+    status?: number;
+    execTimeMs?: number;
+    opengemKey?: string;
+    userAgent?: string;
+    remoteIp?: string;
     tokensUsed: number;
     success: boolean;
     timestamp: Date | number;
+}
+
+export interface ChatConversationMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    text: string;
+    thought?: string;
+    model?: string;
+    error?: string;
+    createdAt?: Date | number | string;
+    editedAt?: Date | number | string;
+    forkedFromMessageId?: string;
+}
+
+export interface ChatConversationSummary {
+    id: string;
+    title: string;
+    model: string;
+    sessionId: string;
+    messageCount: number;
+    forkedFromId?: string;
+    createdAt: Date | number;
+    updatedAt: Date | number;
+}
+
+export interface ChatConversation extends ChatConversationSummary {
+    messages: ChatConversationMessage[];
 }
 
 export interface Account {
@@ -87,6 +124,11 @@ export interface IDatabase {
 
     addRequestLog(log: Omit<RequestLog, 'id'>): Promise<void>;
     getRecentLogs(limit?: number): Promise<RequestLog[]>;
+
+    upsertChatConversation(conversation: ChatConversation): Promise<ChatConversation>;
+    getChatConversations(limit?: number): Promise<ChatConversationSummary[]>;
+    getChatConversation(id: string): Promise<ChatConversation | null>;
+    deleteChatConversation(id: string): Promise<void>;
 
     getStats(): Promise<DbStats>;
 }

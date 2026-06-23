@@ -3,18 +3,20 @@ import { Request, Response } from 'express';
 import { getDatabase } from '../services/database';
 import { nativeFetch, nativeFetchStream } from '../services/http';
 import { GEMINI_API_BASE, DEFAULT_MODEL } from '../services/antigravity';
-import { accountRateLimiter } from '../services/rate-limiter';
 import { classifyError } from '../services/error-classifier';
 import {
-    isAccountInCooldown,
-    shouldProbeAccount,
-    recordProbe,
     markAccountCooldown,
     markAccountSuccess,
     clearExpiredCooldowns,
+    parseRetryAfterMs,
 } from '../services/account-cooldown';
 import { geminiRequestSemaphore, geminiStreamSemaphore, updateConcurrencyLimits } from '../services/concurrency';
 import { getReadyAccounts, ensureFreshToken } from '../services/account-manager';
+import {
+    beginAccountAttempt,
+    planAccountAttempts,
+    releaseAccountAttempt,
+} from '../services/account-balancer';
 import {
     AccountAffinityContext,
     bindAffinityAccount,
@@ -22,9 +24,7 @@ import {
     createAccountAffinityContext,
     getAffinityLogFields,
     getAffinityPromptId,
-    orderAccountsForAffinity,
     releaseAffinityReservation,
-    reserveAffinityAccount,
 } from '../services/account-affinity';
 import {
     StreamSink,
@@ -34,6 +34,7 @@ import {
     safeWrite,
 } from '../services/streaming';
 import { resolveCompatibilityModel } from '../services/adapters/model-aliases';
+import { getRequestLogMetadata, RequestLogMetadata } from '../services/access-log';
 
 // ─── Constants ────────────────────────────────────────────
 
@@ -60,6 +61,14 @@ function applyJitter(delayMs: number): number {
 
 function computeBackoffDelay(attempt: number): number {
     return applyJitter(Math.min(BASE_RETRY_DELAY_MS * 2 ** attempt, MAX_RETRY_DELAY_MS));
+}
+
+function sleep(delayMs: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+function shouldCooldownForCategory(category: ReturnType<typeof classifyError>): boolean {
+    return !['format', 'model_not_found'].includes(category);
 }
 
 function classify429(text: string): 'quota' | 'rate_limit' {
@@ -154,6 +163,7 @@ function logRequest(
     isFallback?: boolean,
     affinity?: AccountAffinityContext,
     usage?: RequestTokenUsage,
+    requestMeta?: RequestLogMetadata,
 ) {
     let question = 'Unknown';
     const last = contents?.[contents.length - 1];
@@ -182,6 +192,18 @@ function logRequest(
         ...(usage?.promptTokens !== undefined && { promptTokens: usage.promptTokens }),
         ...(usage?.completionTokens !== undefined && { completionTokens: usage.completionTokens }),
         ...(usage?.effectiveTokens !== undefined && { effectiveTokensUsed: usage.effectiveTokens }),
+        ...(requestMeta && {
+            requestId: requestMeta.requestId,
+            level: success ? 'info' : 'warn',
+            method: requestMeta.method,
+            url: requestMeta.url,
+            userApi: requestMeta.userApi,
+            status: success ? 200 : 502,
+            execTimeMs: requestMeta.execTimeMs,
+            opengemKey: requestMeta.opengemKey,
+            userAgent: requestMeta.userAgent,
+            remoteIp: requestMeta.remoteIp,
+        }),
         tokensUsed: tokens, success, timestamp: new Date(),
     }).catch((err: any) => console.error('Log write error:', err));
 }
@@ -208,6 +230,7 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
             contents,
             systemInstruction: finalSystemInstruction,
         });
+        const requestMeta = () => getRequestLogMetadata(req);
         if (req.params.action === 'streamGenerateContent') {
             const sink = new GeminiNativeSink(res, /* headersAlreadyWritten */ false, /* unwrapEnvelope */ true);
             await streamGeminiWithSink({
@@ -221,11 +244,12 @@ export const handleGenerateContent = async (req: Request, res: Response): Promis
                 sink,
                 logModel: requestedModelLabel,
                 affinity,
+                requestMeta,
             });
             return;
         }
 
-        const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, finalSystemInstruction, tools, finalToolConfig, requestedModelLabel, affinity);
+        const result = await tryGenerateContentWithAccounts(model, contents, generationConfig, finalSystemInstruction, tools, finalToolConfig, requestedModelLabel, affinity, requestMeta);
         if (!result) { res.status(503).json({ error: 'All Gemini accounts exhausted or failed.' }); return; }
         res.json(result);
     } catch (e: any) {
@@ -260,32 +284,33 @@ export async function generateContentWithAccounts(
     toolConfig?: any,
     logModel?: string,
     affinity?: AccountAffinityContext,
+    requestMeta?: () => RequestLogMetadata,
 ): Promise<GeminiNonStreamResult | null> {
     const modelForLog = logModel || model;
     const db = getDatabase();
     await updateConcurrencyLimits();
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const accounts = orderAccountsForAffinity(await selectReadyAccounts(), affinity);
-        if (accounts.length === 0) { console.error('❌ No active accounts.'); return null; }
+        const accountPlan = planAccountAttempts(await selectReadyAccounts(), { affinity, mode: 'non-stream' });
+        if (!accountPlan.hasActiveAccounts) { console.error('❌ No active accounts.'); return null; }
 
-        for (let i = 0; i < accounts.length; i++) {
-            const account = accounts[i];
+        if (accountPlan.candidates.length === 0) {
+            if (attempt >= MAX_ATTEMPTS - 1) break;
+            const backoffDelay = computeBackoffDelay(attempt);
+            const delay = Math.min(accountPlan.nextRetryAfterMs ?? backoffDelay, backoffDelay);
+            console.log(`⚠️ No account currently available. Waiting ${delay}ms before replanning...`);
+            await sleep(delay);
+            continue;
+        }
 
-            if (isAccountInCooldown(account.email)) {
-                if (shouldProbeAccount(account.email)) { console.log(`🔍 Probing ${account.email}...`); recordProbe(account.email); }
-                else continue;
-            }
+        for (let i = 0; i < accountPlan.candidates.length; i++) {
+            const lease = beginAccountAttempt(accountPlan.candidates[i], affinity);
+            if (!lease) continue;
+            const account = lease.account;
 
-            if (!accountRateLimiter.consume(account.email).allowed) {
-                console.warn(`🚦 ${account.email} locally rate limited. Skipping.`);
-                continue;
-            }
-
-            if (i > 0) await new Promise(r => setTimeout(r, INTER_ACCOUNT_STAGGER_MS));
+            if (i > 0) await sleep(INTER_ACCOUNT_STAGGER_MS);
 
             try {
-                reserveAffinityAccount(affinity, account.email);
                 const token = await ensureFreshToken(account);
                 const requestPayload = buildPayload(contents, generationConfig, systemInstruction, tools, toolConfig);
                 let usedModel = model || DEFAULT_MODEL;
@@ -307,19 +332,26 @@ export async function generateContentWithAccounts(
                 if (response.status === 429) {
                     let errCategory: 'quota' | 'rate_limit' = 'rate_limit';
                     try { errCategory = classify429(await response.text()); } catch { /* ignore */ }
-                    markAccountCooldown(account.email, errCategory === 'quota' ? 'quota' : 'rate_limit');
+                    const category = errCategory === 'quota' ? 'quota' : 'rate_limit';
+                    markAccountCooldown(account.email, category, { retryAfterMs: parseRetryAfterMs(response.headers['retry-after']) });
                     releaseAffinityReservation(affinity, account.email);
+                    releaseAccountAttempt(lease, { success: false, category });
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                    logRequest(db, account.email, contents, `ERROR 429: ${errCategory} cooldown`, 0, false, systemInstruction, modelForLog, false, affinity);
+                    logRequest(db, account.email, contents, `ERROR 429: ${errCategory} cooldown`, 0, false, systemInstruction, modelForLog, false, affinity, undefined, requestMeta?.());
                     continue;
                 }
 
                 if (!response.ok) {
                     const text = await response.text();
+                    const category = classifyError(`${response.status} ${text}`);
                     console.error(`❌ API error ${response.status} for ${account.email}: ${text}`);
+                    if (shouldCooldownForCategory(category)) {
+                        markAccountCooldown(account.email, category, { retryAfterMs: parseRetryAfterMs(response.headers['retry-after']) });
+                    }
                     releaseAffinityReservation(affinity, account.email);
+                    releaseAccountAttempt(lease, { success: false, category });
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                    logRequest(db, account.email, contents, `ERROR ${response.status}: ${text.substring(0, 100)}`, 0, false, systemInstruction, modelForLog, false, affinity);
+                    logRequest(db, account.email, contents, `ERROR ${response.status}: ${text.substring(0, 100)}`, 0, false, systemInstruction, modelForLog, false, affinity, undefined, requestMeta?.());
                     continue;
                 }
 
@@ -331,25 +363,28 @@ export async function generateContentWithAccounts(
                     usage.effectiveTokens = computeEffectiveTokenUsage(affinity, account.email, usage);
                     bindAffinityAccount(affinity, account.email);
                     await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: usage.effectiveTokens });
-                    logRequest(db, account.email, contents, text, usage.totalTokens, true, systemInstruction, modelForLog, false, affinity, usage);
+                    logRequest(db, account.email, contents, text, usage.totalTokens, true, systemInstruction, modelForLog, false, affinity, usage, requestMeta?.());
+                    releaseAccountAttempt(lease, { success: true });
                     console.log(`✅ Fulfilled by ${account.email}`);
                     return { response: data.response, usedModel };
                 }
                 releaseAffinityReservation(affinity, account.email);
+                releaseAccountAttempt(lease, { success: false, category: 'unknown' });
             } catch (e: any) {
                 console.error(`❌ Error with ${account.email}:`, e);
                 const cat = classifyError(e.message || '');
-                markAccountCooldown(account.email, cat);
+                if (shouldCooldownForCategory(cat)) markAccountCooldown(account.email, cat);
                 releaseAffinityReservation(affinity, account.email);
+                releaseAccountAttempt(lease, { success: false, category: cat });
                 await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
-                logRequest(db, account.email, contents, `ERROR: ${e.message?.substring(0, 100) || 'Network Error'}`, 0, false, systemInstruction, modelForLog, false, affinity);
+                logRequest(db, account.email, contents, `ERROR: ${e.message?.substring(0, 100) || 'Network Error'}`, 0, false, systemInstruction, modelForLog, false, affinity, undefined, requestMeta?.());
             }
         }
 
         if (attempt < MAX_ATTEMPTS - 1) {
             const delay = computeBackoffDelay(attempt);
             console.log(`⚠️ All accounts failed (${attempt + 1}/${MAX_ATTEMPTS}). Backoff: ${delay}ms...`);
-            await new Promise(r => setTimeout(r, delay));
+            await sleep(delay);
         }
     }
     return null;
@@ -358,9 +393,9 @@ export async function generateContentWithAccounts(
 /** Legacy signature kept for backward compatibility — returns `data.response` only. */
 export async function tryGenerateContentWithAccounts(
     model: string, contents: any[],
-    generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any, logModel?: string, affinity?: AccountAffinityContext
+    generationConfig?: any, systemInstruction?: any, tools?: any[], toolConfig?: any, logModel?: string, affinity?: AccountAffinityContext, requestMeta?: () => RequestLogMetadata
 ): Promise<any | null> {
-    const result = await generateContentWithAccounts(model, contents, generationConfig, systemInstruction, tools, toolConfig, logModel, affinity);
+    const result = await generateContentWithAccounts(model, contents, generationConfig, systemInstruction, tools, toolConfig, logModel, affinity, requestMeta);
     return result ? result.response : null;
 }
 
@@ -485,6 +520,7 @@ export interface StreamWithSinkOptions {
     /** Client-facing model label to record in request logs (overrides upstream slug). */
     logModel?: string;
     affinity?: AccountAffinityContext;
+    requestMeta?: () => RequestLogMetadata;
 }
 
 /**
@@ -495,7 +531,7 @@ export interface StreamWithSinkOptions {
  * directly (apart from issuing a JSON 503 *before* the sink has started).
  */
 export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise<void> {
-    const { model, contents, generationConfig, systemInstruction, tools, toolConfig, res, sink, logModel, affinity } = opts;
+    const { model, contents, generationConfig, systemInstruction, tools, toolConfig, res, sink, logModel, affinity, requestMeta } = opts;
     const modelForLog = logModel || model || DEFAULT_MODEL;
     const db = getDatabase();
     await updateConcurrencyLimits();
@@ -515,30 +551,30 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
     };
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const accounts = orderAccountsForAffinity(await selectReadyAccounts(), affinity);
+        const accountPlan = planAccountAttempts(await selectReadyAccounts(), { affinity, mode: 'stream' });
 
-        if (accounts.length === 0) {
+        if (!accountPlan.hasActiveAccounts) {
             reportNoAccounts();
             return;
         }
 
-        for (let i = 0; i < accounts.length; i++) {
-            const account = accounts[i];
+        if (accountPlan.candidates.length === 0) {
+            if (attempt >= MAX_ATTEMPTS - 1) break;
+            const backoffDelay = computeBackoffDelay(attempt);
+            const delay = Math.min(accountPlan.nextRetryAfterMs ?? backoffDelay, backoffDelay);
+            console.log(`⚠️ Stream: no account currently available. Waiting ${delay}ms before replanning...`);
+            await sleep(delay);
+            continue;
+        }
 
-            if (isAccountInCooldown(account.email)) {
-                if (shouldProbeAccount(account.email)) { console.log(`🔍 Probing ${account.email}...`); recordProbe(account.email); }
-                else continue;
-            }
+        for (let i = 0; i < accountPlan.candidates.length; i++) {
+            const lease = beginAccountAttempt(accountPlan.candidates[i], affinity);
+            if (!lease) continue;
+            const account = lease.account;
 
-            if (!accountRateLimiter.consume(account.email).allowed) {
-                console.warn(`🚦 ${account.email} locally rate limited. Skipping stream.`);
-                continue;
-            }
-
-            if (i > 0) await new Promise(r => setTimeout(r, INTER_ACCOUNT_STAGGER_MS));
+            if (i > 0) await sleep(INTER_ACCOUNT_STAGGER_MS);
 
             try {
-                reserveAffinityAccount(affinity, account.email);
                 const token = await ensureFreshToken(account);
                 const requestPayload = buildPayload(contents, generationConfig, systemInstruction, tools, toolConfig);
                 let usedModel = requestedModel;
@@ -549,7 +585,7 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
                     user_prompt_id: userPromptId, request: requestPayload,
                 });
 
-                let { status, stream } = await geminiStreamSemaphore.run(() => nativeFetchStream(`${GEMINI_API_BASE}:streamGenerateContent?alt=sse`, {
+                let { status, headers, stream } = await geminiStreamSemaphore.run(() => nativeFetchStream(`${GEMINI_API_BASE}:streamGenerateContent?alt=sse`, {
                     method: 'POST', headers: buildHeaders(token),
                     body: JSON.stringify(geminiBody(usedModel)),
                 }));
@@ -557,16 +593,23 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
                 if (status === 429) {
                     const errText = await drainStream(stream);
                     const cat = classify429(errText);
-                    markAccountCooldown(account.email, cat === 'quota' ? 'quota' : 'rate_limit');
+                    const category = cat === 'quota' ? 'quota' : 'rate_limit';
+                    markAccountCooldown(account.email, category, { retryAfterMs: parseRetryAfterMs(headers['retry-after']) });
                     releaseAffinityReservation(affinity, account.email);
+                    releaseAccountAttempt(lease, { success: false, category });
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
                     continue;
                 }
 
                 if (status < 200 || status >= 300) {
                     const text = await drainStream(stream);
+                    const category = classifyError(`${status} ${text}`);
                     console.error(`❌ Stream API error ${status} for ${account.email}: ${text.substring(0, 200)}`);
+                    if (shouldCooldownForCategory(category)) {
+                        markAccountCooldown(account.email, category, { retryAfterMs: parseRetryAfterMs(headers['retry-after']) });
+                    }
                     releaseAffinityReservation(affinity, account.email);
+                    releaseAccountAttempt(lease, { success: false, category });
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
                     continue;
                 }
@@ -581,15 +624,17 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
                     usage.effectiveTokens = computeEffectiveTokenUsage(affinity, account.email, usage);
                     bindAffinityAccount(affinity, account.email);
                     await db.incrementAccountStats(account.email, { successful: 1, failed: 0, tokens: usage.effectiveTokens });
-                    logRequest(db, account.email, contents, fullAnswer, usage.totalTokens, true, systemInstruction, modelForLog, usedModel !== requestedModel, affinity, usage);
+                    logRequest(db, account.email, contents, fullAnswer, usage.totalTokens, true, systemInstruction, modelForLog, usedModel !== requestedModel, affinity, usage, requestMeta?.());
                     sink.finalize({ fullText: fullAnswer, tokenUsage: usage.totalTokens, finishReason });
+                    releaseAccountAttempt(lease, { success: true });
                     console.log(`✅ Stream fulfilled by ${account.email} [${usedModel}]`);
                     return;
                 } catch (streamErr: any) {
                     console.error(`❌ Stream pipe error for ${account.email}:`, streamErr);
                     const cat = classifyError(streamErr.message || '');
-                    markAccountCooldown(account.email, cat);
+                    if (shouldCooldownForCategory(cat)) markAccountCooldown(account.email, cat);
                     releaseAffinityReservation(affinity, account.email);
+                    releaseAccountAttempt(lease, { success: false, category: cat });
                     await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
 
                     // Once the sink started writing, the response is committed. We
@@ -602,8 +647,9 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
             } catch (e: any) {
                 console.error(`❌ Stream network error with ${account.email}:`, e);
                 const cat = classifyError(e.message || '');
-                markAccountCooldown(account.email, cat);
+                if (shouldCooldownForCategory(cat)) markAccountCooldown(account.email, cat);
                 releaseAffinityReservation(affinity, account.email);
+                releaseAccountAttempt(lease, { success: false, category: cat });
                 await db.incrementAccountStats(account.email, { successful: 0, failed: 1, tokens: 0 });
             }
         }
@@ -611,7 +657,7 @@ export async function streamGeminiWithSink(opts: StreamWithSinkOptions): Promise
         if (attempt < MAX_ATTEMPTS - 1) {
             const delay = computeBackoffDelay(attempt);
             console.log(`⚠️ Stream: All accounts failed (${attempt + 1}/${MAX_ATTEMPTS}). Backoff: ${delay}ms...`);
-            await new Promise(r => setTimeout(r, delay));
+            await sleep(delay);
         }
     }
 
@@ -651,6 +697,7 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
             contents,
             systemInstruction: finalSystemInstruction,
         });
+        const requestMeta = () => getRequestLogMetadata(req);
         await streamGeminiWithSink({
             model,
             contents,
@@ -661,6 +708,7 @@ export async function handleAdminChat(req: Request, res: Response): Promise<void
             res,
             sink,
             affinity,
+            requestMeta,
         });
     } catch (e: any) {
         console.error('Admin Chat Error:', e);

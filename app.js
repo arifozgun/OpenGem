@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
 // Export the Express app for Phusion Passenger (cPanel production).
 // In development, index.js internally calls app.listen().

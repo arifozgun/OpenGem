@@ -15,11 +15,12 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { encrypt, decrypt } from './config';
-import type { IDatabase, Account, ApiKey, RequestLog, DbStats } from './database';
+import { encrypt, decrypt, getLoggingConfig } from './config';
+import { getDataDir } from './paths';
+import type { IDatabase, Account, ApiKey, RequestLog, DbStats, ChatConversation, ChatConversationMessage, ChatConversationSummary } from './database';
 import { mergeEffectiveTokenStats } from './token-stats';
 
-const DATA_DIR = path.join(__dirname, '../../data');
+const DATA_DIR = getDataDir();
 const SQLITE_PATH = path.join(DATA_DIR, 'db.sqlite');
 const LEGACY_JSON_PATH = path.join(DATA_DIR, 'db.json');
 const LEGACY_JSON_BACKUP_PATH = path.join(DATA_DIR, 'db.json.bak');
@@ -41,6 +42,7 @@ function getDb(): DatabaseSync {
     const db = new DatabaseSync(SQLITE_PATH);
     db.exec(`
         PRAGMA journal_mode = WAL;
+        PRAGMA busy_timeout = 5000;
         PRAGMA synchronous = NORMAL;
         PRAGMA foreign_keys = ON;
         PRAGMA temp_store = MEMORY;
@@ -91,13 +93,37 @@ function getDb(): DatabaseSync {
             promptTokens      INTEGER,
             completionTokens  INTEGER,
             effectiveTokensUsed INTEGER,
+            requestId         TEXT,
+            level             TEXT,
+            method            TEXT,
+            url               TEXT,
+            userApi           TEXT,
+            status            INTEGER,
+            execTimeMs        INTEGER,
+            opengemKey        TEXT,
+            userAgent         TEXT,
+            remoteIp          TEXT,
             tokensUsed        INTEGER NOT NULL DEFAULT 0,
             success           INTEGER NOT NULL DEFAULT 1,
             timestamp         TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON request_logs(timestamp DESC);
+
+        CREATE TABLE IF NOT EXISTS chat_conversations (
+            id            TEXT PRIMARY KEY,
+            title         TEXT NOT NULL,
+            model         TEXT NOT NULL,
+            sessionId     TEXT NOT NULL,
+            messages      TEXT NOT NULL,
+            messageCount  INTEGER NOT NULL DEFAULT 0,
+            forkedFromId  TEXT,
+            createdAt     TEXT NOT NULL,
+            updatedAt     TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_conversations_updated ON chat_conversations(updatedAt DESC);
     `);
     ensureRequestLogAffinityColumns(db);
+    ensureChatConversationColumns(db);
     _db = db;
 
     // One-shot migration from legacy JSON, if present.
@@ -215,6 +241,10 @@ function migrateFromJsonIfNeeded(db: DatabaseSync): void {
 }
 
 function trimLogs(db: DatabaseSync): void {
+    const retentionDays = getLoggingConfig().requests.maxDaysRetention;
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare('DELETE FROM request_logs WHERE timestamp < ?').run(cutoff);
+
     const row = db.prepare('SELECT COUNT(*) AS n FROM request_logs').get() as any;
     if ((row.n as number) <= MAX_LOG_ROWS) return;
     db.exec(`
@@ -243,6 +273,29 @@ function ensureRequestLogAffinityColumns(db: DatabaseSync): void {
     addColumn('promptTokens', 'INTEGER');
     addColumn('completionTokens', 'INTEGER');
     addColumn('effectiveTokensUsed', 'INTEGER');
+    addColumn('requestId', 'TEXT');
+    addColumn('level', 'TEXT');
+    addColumn('method', 'TEXT');
+    addColumn('url', 'TEXT');
+    addColumn('userApi', 'TEXT');
+    addColumn('status', 'INTEGER');
+    addColumn('execTimeMs', 'INTEGER');
+    addColumn('opengemKey', 'TEXT');
+    addColumn('userAgent', 'TEXT');
+    addColumn('remoteIp', 'TEXT');
+}
+
+function ensureChatConversationColumns(db: DatabaseSync): void {
+    const columns = new Set(
+        (db.prepare('PRAGMA table_info(chat_conversations)').all() as any[])
+            .map(row => String(row.name)),
+    );
+    const addColumn = (name: string, definition: string) => {
+        if (!columns.has(name)) db.exec(`ALTER TABLE chat_conversations ADD COLUMN ${name} ${definition}`);
+    };
+
+    addColumn('messageCount', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('forkedFromId', 'TEXT');
 }
 
 // --- Helpers --------------------------------------------------------------
@@ -264,6 +317,17 @@ function toIsoOrNull(val: any): string | null {
     return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+function parseChatMessages(value: any): ChatConversationMessage[] {
+    if (!value) return [];
+    if (Array.isArray(value)) return value as ChatConversationMessage[];
+    try {
+        const parsed = JSON.parse(String(value));
+        return Array.isArray(parsed) ? parsed as ChatConversationMessage[] : [];
+    } catch {
+        return [];
+    }
+}
+
 function rowToAccount(r: any): Account {
     return {
         id: r.id,
@@ -283,6 +347,26 @@ function rowToAccount(r: any): Account {
         successfulRequests: r.successfulRequests ?? 0,
         failedRequests: r.failedRequests ?? 0,
         totalTokensUsed: r.totalTokensUsed ?? 0,
+    };
+}
+
+function rowToChatSummary(r: any): ChatConversationSummary {
+    return {
+        id: r.id,
+        title: r.title,
+        model: r.model,
+        sessionId: r.sessionId,
+        messageCount: r.messageCount ?? parseChatMessages(r.messages).length,
+        ...(r.forkedFromId && { forkedFromId: r.forkedFromId }),
+        createdAt: r.createdAt ? new Date(r.createdAt) : new Date(0),
+        updatedAt: r.updatedAt ? new Date(r.updatedAt) : new Date(0),
+    };
+}
+
+function rowToChatConversation(r: any): ChatConversation {
+    return {
+        ...rowToChatSummary(r),
+        messages: parseChatMessages(r.messages),
     };
 }
 
@@ -485,8 +569,9 @@ export const sqliteDb: IDatabase = {
                 id, accountEmail, question, answer, systemInstruction, model,
                 isFallback, affinityKeyHash, affinitySource, affinityHit,
                 affinityRebound, promptTokens, completionTokens, effectiveTokensUsed,
-                tokensUsed, success, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                requestId, level, method, url, userApi, status, execTimeMs,
+                opengemKey, userAgent, remoteIp, tokensUsed, success, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
             generateId(),
             log.accountEmail ?? null,
@@ -502,6 +587,16 @@ export const sqliteDb: IDatabase = {
             log.promptTokens ?? null,
             log.completionTokens ?? null,
             log.effectiveTokensUsed ?? null,
+            log.requestId ?? null,
+            log.level ?? null,
+            log.method ?? null,
+            log.url ?? null,
+            log.userApi ?? null,
+            log.status ?? null,
+            log.execTimeMs ?? null,
+            log.opengemKey ?? null,
+            log.userAgent ?? null,
+            log.remoteIp ?? null,
             log.tokensUsed ?? 0,
             log.success === false ? 0 : 1,
             toIso(log.timestamp, new Date().toISOString()),
@@ -529,10 +624,74 @@ export const sqliteDb: IDatabase = {
             ...(r.promptTokens !== null && r.promptTokens !== undefined && { promptTokens: r.promptTokens }),
             ...(r.completionTokens !== null && r.completionTokens !== undefined && { completionTokens: r.completionTokens }),
             ...(r.effectiveTokensUsed !== null && r.effectiveTokensUsed !== undefined && { effectiveTokensUsed: r.effectiveTokensUsed }),
+            ...(r.requestId && { requestId: r.requestId }),
+            ...(r.level && { level: r.level }),
+            ...(r.method && { method: r.method }),
+            ...(r.url && { url: r.url }),
+            ...(r.userApi && { userApi: r.userApi }),
+            ...(r.status !== null && r.status !== undefined && { status: r.status }),
+            ...(r.execTimeMs !== null && r.execTimeMs !== undefined && { execTimeMs: r.execTimeMs }),
+            ...(r.opengemKey && { opengemKey: r.opengemKey }),
+            ...(r.userAgent && { userAgent: r.userAgent }),
+            ...(r.remoteIp && { remoteIp: r.remoteIp }),
             tokensUsed: r.tokensUsed || 0,
             success: !!r.success,
             timestamp: new Date(r.timestamp),
         }));
+    },
+
+    // --- Admin chat history ---
+
+    async upsertChatConversation(conversation: ChatConversation): Promise<ChatConversation> {
+        const db = getDb();
+        const now = new Date().toISOString();
+        const existing = db.prepare('SELECT createdAt FROM chat_conversations WHERE id = ?').get(conversation.id) as any;
+        const createdAt = existing?.createdAt || toIso(conversation.createdAt, now);
+        const updatedAt = toIso(conversation.updatedAt, now);
+        const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+
+        db.prepare(`
+            INSERT INTO chat_conversations (
+                id, title, model, sessionId, messages, messageCount, forkedFromId, createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                model = excluded.model,
+                sessionId = excluded.sessionId,
+                messages = excluded.messages,
+                messageCount = excluded.messageCount,
+                forkedFromId = excluded.forkedFromId,
+                updatedAt = excluded.updatedAt
+        `).run(
+            conversation.id,
+            conversation.title,
+            conversation.model,
+            conversation.sessionId,
+            JSON.stringify(messages),
+            messages.length,
+            conversation.forkedFromId ?? null,
+            createdAt,
+            updatedAt,
+        );
+
+        const saved = await this.getChatConversation(conversation.id);
+        return saved || { ...conversation, createdAt: new Date(createdAt), updatedAt: new Date(updatedAt), messageCount: messages.length };
+    },
+
+    async getChatConversations(limitCount: number = 50): Promise<ChatConversationSummary[]> {
+        const rows = getDb().prepare(
+            'SELECT id, title, model, sessionId, messageCount, forkedFromId, createdAt, updatedAt FROM chat_conversations ORDER BY updatedAt DESC LIMIT ?'
+        ).all(limitCount) as any[];
+        return rows.map(rowToChatSummary);
+    },
+
+    async getChatConversation(id: string): Promise<ChatConversation | null> {
+        const row = getDb().prepare('SELECT * FROM chat_conversations WHERE id = ?').get(id) as any;
+        return row ? rowToChatConversation(row) : null;
+    },
+
+    async deleteChatConversation(id: string): Promise<void> {
+        getDb().prepare('DELETE FROM chat_conversations WHERE id = ?').run(id);
     },
 
     // --- Stats ---

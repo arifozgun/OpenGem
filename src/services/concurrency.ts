@@ -7,6 +7,7 @@
  */
 
 import { getReadyAccounts } from './account-manager';
+import { getRecommendedGlobalConcurrency } from './account-balancer';
 
 export async function runWithConcurrencyLimit<T>(params: {
     tasks: Array<() => Promise<T>>;
@@ -120,9 +121,7 @@ export const geminiStreamSemaphore = new RequestSemaphore(3);
 export async function updateConcurrencyLimits() {
     try {
         const accounts = await getReadyAccounts();
-        const activeCount = accounts.length;
-        // Allow 2 concurrent connections per ready account, minimum 3.
-        const limit = Math.max(3, activeCount * 2);
+        const limit = getRecommendedGlobalConcurrency(accounts);
         
         geminiRequestSemaphore.setMaxConcurrent(limit);
         geminiStreamSemaphore.setMaxConcurrent(limit);

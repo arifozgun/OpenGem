@@ -16,8 +16,8 @@ import {
     deleteField,
     Firestore
 } from 'firebase/firestore';
-import { getConfig, encrypt, decrypt } from './config';
-import type { IDatabase, Account, ApiKey, RequestLog, DbStats } from './database';
+import { getConfig, encrypt, decrypt, getLoggingConfig } from './config';
+import type { IDatabase, Account, ApiKey, RequestLog, DbStats, ChatConversation, ChatConversationSummary } from './database';
 import { mergeEffectiveTokenStats } from './token-stats';
 import crypto from 'crypto';
 
@@ -48,6 +48,8 @@ function getDb(): Firestore {
 const ACCOUNTS_COLLECTION = 'accounts';
 const LOGS_COLLECTION = 'request_logs';
 const API_KEYS_COLLECTION = 'api_keys';
+const MAX_LOG_ROWS = 5000;
+const CHAT_CONVERSATIONS_COLLECTION = 'chat_conversations';
 
 // Secure one-way hash for API key storage
 function hashApiKey(key: string): string {
@@ -65,6 +67,24 @@ function sanitize(obj: Record<string, any>): Record<string, any> {
         out[key] = obj[key] === undefined ? null : obj[key];
     }
     return out;
+}
+
+async function trimRequestLogs(): Promise<void> {
+    const logsRef = collection(getDb(), LOGS_COLLECTION);
+    const snapshot = await getDocs(logsRef);
+    const retentionDays = getLoggingConfig().requests.maxDaysRetention;
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const docs = snapshot.docs
+        .map(docSnap => {
+            const data = docSnap.data();
+            const timestamp = data.timestamp?.toDate ? data.timestamp.toDate() : new Date(data.timestamp);
+            return { id: docSnap.id, timestamp: isNaN(timestamp.getTime()) ? new Date(0) : timestamp };
+        })
+        .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+    const overflowCount = Math.max(0, docs.length - MAX_LOG_ROWS);
+    const toDelete = docs.filter((item, index) => item.timestamp.getTime() < cutoff || index < overflowCount);
+    await Promise.all(toDelete.map(item => deleteDoc(doc(getDb(), LOGS_COLLECTION, item.id))));
 }
 
 // Re-export types for any existing code that imported from firebase.ts
@@ -90,6 +110,29 @@ function mapDocToAccount(doc: any): Account {
         createdAt: toDate(data.createdAt),
         updatedAt: toDate(data.updatedAt)
     } as Account;
+}
+
+function mapDocToChatSummary(docSnap: any): ChatConversationSummary {
+    const data = docSnap.data();
+    const messages = Array.isArray(data.messages) ? data.messages : [];
+    return {
+        id: docSnap.id,
+        title: data.title || 'Untitled chat',
+        model: data.model || '',
+        sessionId: data.sessionId || docSnap.id,
+        messageCount: Number(data.messageCount ?? messages.length) || 0,
+        ...(data.forkedFromId && { forkedFromId: data.forkedFromId }),
+        createdAt: toDate(data.createdAt) || new Date(0),
+        updatedAt: toDate(data.updatedAt) || new Date(0),
+    };
+}
+
+function mapDocToChatConversation(docSnap: any): ChatConversation {
+    const data = docSnap.data();
+    return {
+        ...mapDocToChatSummary(docSnap),
+        messages: Array.isArray(data.messages) ? data.messages : [],
+    };
 }
 
 export type { Account, ApiKey, RequestLog, DbStats };
@@ -303,10 +346,21 @@ export const firebaseDb: IDatabase = {
             ...(log.promptTokens !== undefined && { promptTokens: log.promptTokens }),
             ...(log.completionTokens !== undefined && { completionTokens: log.completionTokens }),
             ...(log.effectiveTokensUsed !== undefined && { effectiveTokensUsed: log.effectiveTokensUsed }),
+            ...(log.requestId && { requestId: log.requestId }),
+            ...(log.level && { level: log.level }),
+            ...(log.method && { method: log.method }),
+            ...(log.url && { url: log.url }),
+            ...(log.userApi && { userApi: log.userApi }),
+            ...(log.status !== undefined && { status: log.status }),
+            ...(log.execTimeMs !== undefined && { execTimeMs: log.execTimeMs }),
+            ...(log.opengemKey && { opengemKey: log.opengemKey }),
+            ...(log.userAgent && { userAgent: log.userAgent }),
+            ...(log.remoteIp && { remoteIp: log.remoteIp }),
             tokensUsed: log.tokensUsed,
             success: log.success ?? true, // default to true if undefined for older code
-            timestamp: new Date()
+            timestamp: log.timestamp ? new Date(log.timestamp) : new Date()
         });
+        if (Math.random() < 0.05) trimRequestLogs().catch(err => console.error('Firestore request log trim error:', err));
     },
 
     async getRecentLogs(limitCount: number = 50): Promise<RequestLog[]> {
@@ -316,6 +370,7 @@ export const firebaseDb: IDatabase = {
 
         snapshot.forEach(docSnap => {
             const data = docSnap.data();
+            const timestamp = data.timestamp?.toDate ? data.timestamp.toDate() : new Date(data.timestamp);
             logs.push({
                 id: docSnap.id,
                 accountEmail: data.accountEmail,
@@ -331,15 +386,71 @@ export const firebaseDb: IDatabase = {
                 ...(data.promptTokens !== undefined && { promptTokens: data.promptTokens }),
                 ...(data.completionTokens !== undefined && { completionTokens: data.completionTokens }),
                 ...(data.effectiveTokensUsed !== undefined && { effectiveTokensUsed: data.effectiveTokensUsed }),
+                ...(data.requestId && { requestId: data.requestId }),
+                ...(data.level && { level: data.level }),
+                ...(data.method && { method: data.method }),
+                ...(data.url && { url: data.url }),
+                ...(data.userApi && { userApi: data.userApi }),
+                ...(data.status !== undefined && { status: data.status }),
+                ...(data.execTimeMs !== undefined && { execTimeMs: data.execTimeMs }),
+                ...(data.opengemKey && { opengemKey: data.opengemKey }),
+                ...(data.userAgent && { userAgent: data.userAgent }),
+                ...(data.remoteIp && { remoteIp: data.remoteIp }),
                 tokensUsed: data.tokensUsed || 0,
                 success: data.success,
-                timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : new Date(data.timestamp)
+                timestamp
             });
         });
 
         // Sort by timestamp descending (most recent first)
-        logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        return logs.slice(0, limitCount);
+        const cutoff = Date.now() - getLoggingConfig().requests.maxDaysRetention * 24 * 60 * 60 * 1000;
+        const retained = logs.filter(log => new Date(log.timestamp).getTime() >= cutoff);
+        retained.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        return retained.slice(0, limitCount);
+    },
+
+    // --- ADMIN CHAT HISTORY ---
+
+    async upsertChatConversation(conversation: ChatConversation): Promise<ChatConversation> {
+        const docRef = doc(getDb(), CHAT_CONVERSATIONS_COLLECTION, conversation.id);
+        const existing = await getDoc(docRef);
+        const now = new Date();
+        const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+
+        await setDoc(docRef, sanitize({
+            title: conversation.title,
+            model: conversation.model,
+            sessionId: conversation.sessionId,
+            messages,
+            messageCount: messages.length,
+            forkedFromId: conversation.forkedFromId || null,
+            createdAt: existing.exists()
+                ? existing.data().createdAt
+                : (conversation.createdAt ? new Date(conversation.createdAt) : now),
+            updatedAt: conversation.updatedAt ? new Date(conversation.updatedAt) : now,
+        }), { merge: true });
+
+        const saved = await getDoc(docRef);
+        return saved.exists()
+            ? mapDocToChatConversation(saved)
+            : { ...conversation, messageCount: messages.length, createdAt: now, updatedAt: now };
+    },
+
+    async getChatConversations(limitCount: number = 50): Promise<ChatConversationSummary[]> {
+        const conversationsRef = collection(getDb(), CHAT_CONVERSATIONS_COLLECTION);
+        const q = query(conversationsRef, orderBy('updatedAt', 'desc'), firestoreLimit(limitCount));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(mapDocToChatSummary);
+    },
+
+    async getChatConversation(id: string): Promise<ChatConversation | null> {
+        const docRef = doc(getDb(), CHAT_CONVERSATIONS_COLLECTION, id);
+        const snapshot = await getDoc(docRef);
+        return snapshot.exists() ? mapDocToChatConversation(snapshot) : null;
+    },
+
+    async deleteChatConversation(id: string): Promise<void> {
+        await deleteDoc(doc(getDb(), CHAT_CONVERSATIONS_COLLECTION, id));
     },
 
     async getStats(): Promise<{

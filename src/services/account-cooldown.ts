@@ -21,6 +21,7 @@ const MIN_PROBE_INTERVAL_MS = 30_000;  // 30 seconds between probes (from opencl
 const RATE_LIMIT_COOLDOWN_MS = 15_000; // 15 seconds for rate limits
 const QUOTA_COOLDOWN_MS = 60 * 60 * 1000; // 60 minutes for quota exhaustion
 const PROBE_MARGIN_MS = 2 * 60 * 1000;    // Start probing 2 min before cooldown expires
+const MAX_RETRY_AFTER_MS = 24 * 60 * 60 * 1000; // Never trust an upstream Retry-After beyond 24h
 
 // In-memory cooldown state per account email
 const cooldownState = new Map<string, AccountCooldownState>();
@@ -52,10 +53,11 @@ export function calculateCooldownMs(category: ErrorCategory, failureCount: numbe
 /**
  * Mark an account as in cooldown.
  */
-export function markAccountCooldown(email: string, category: ErrorCategory): void {
+export function markAccountCooldown(email: string, category: ErrorCategory, options: { retryAfterMs?: number } = {}): void {
     const existing = cooldownState.get(email);
     const failureCount = (existing?.failureCount ?? 0) + 1;
-    const cooldownMs = calculateCooldownMs(category, failureCount);
+    const retryAfterMs = normalizeRetryAfterMs(options.retryAfterMs);
+    const cooldownMs = Math.max(calculateCooldownMs(category, failureCount), retryAfterMs ?? 0);
 
     cooldownState.set(email, {
         cooldownUntil: Date.now() + cooldownMs,
@@ -65,6 +67,34 @@ export function markAccountCooldown(email: string, category: ErrorCategory): voi
     });
 
     console.log(`🔒 Account ${email} in cooldown (${category}) for ${Math.round(cooldownMs / 1000)}s [failure #${failureCount}]`);
+}
+
+export function parseRetryAfterMs(value: unknown): number | undefined {
+    const raw = Array.isArray(value) ? value[0] : value;
+    if (raw === undefined || raw === null) return undefined;
+
+    if (typeof raw === 'number') {
+        return normalizeRetryAfterMs(raw * 1000);
+    }
+
+    if (typeof raw !== 'string') return undefined;
+
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined;
+
+    const seconds = Number(trimmed);
+    if (Number.isFinite(seconds)) {
+        return normalizeRetryAfterMs(seconds * 1000);
+    }
+
+    const dateMs = Date.parse(trimmed);
+    if (Number.isNaN(dateMs)) return undefined;
+    return normalizeRetryAfterMs(dateMs - Date.now());
+}
+
+function normalizeRetryAfterMs(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
+    return Math.min(Math.ceil(value), MAX_RETRY_AFTER_MS);
 }
 
 /**

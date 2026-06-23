@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import type { Account, RequestLog } from './database';
 import { isAccountInCooldown } from './account-cooldown';
 
-export type AffinitySource = 'header-session' | 'header-task' | 'openai-user' | 'anthropic-user' | 'auto-task';
+export type AffinitySource = 'header-session' | 'header-task' | 'openai-user' | 'anthropic-user' | 'openrouter-session' | 'auto-task';
 
 export interface AccountAffinityContext {
     keyHash: string;
@@ -19,7 +19,7 @@ export interface AccountAffinityOptions {
     contents: any[];
     systemInstruction?: any;
     explicitUserId?: string;
-    explicitUserSource?: Extract<AffinitySource, 'openai-user' | 'anthropic-user'>;
+    explicitUserSource?: Extract<AffinitySource, 'openai-user' | 'anthropic-user' | 'openrouter-session'>;
 }
 
 interface Binding {
@@ -55,7 +55,7 @@ export function createAccountAffinityContext(options: AccountAffinityOptions): A
     const scope = apiKeyHash ? `api:${apiKeyHash}` : 'admin';
     const model = options.model || 'default';
 
-    const sessionId = readHeader(options.req, 'x-opengem-session-id');
+    const sessionId = readHeader(options.req, 'x-opengem-session-id') || readHeader(options.req, 'x-session-id');
     if (sessionId) return buildContext(scope, model, 'header-session', sessionId);
 
     const taskId = readHeader(options.req, 'x-opengem-task-id');

@@ -20,6 +20,7 @@ interface HttpResponse {
     ok: boolean;
     status: number;
     statusText: string;
+    headers: http.IncomingHttpHeaders;
     json: () => Promise<any>;
     text: () => Promise<string>;
 }
@@ -29,7 +30,7 @@ interface HttpResponse {
  * This avoids undici's WebAssembly dependency which crashes on
  * memory-constrained shared hosting (cPanel).
  */
-export function nativeFetchStream(url: string, options: RequestOptions = {}): Promise<{ status: number; stream: import('http').IncomingMessage }> {
+export function nativeFetchStream(url: string, options: RequestOptions = {}): Promise<{ status: number; headers: http.IncomingHttpHeaders; stream: import('http').IncomingMessage }> {
     return new Promise((resolve, reject) => {
         const parsedUrl = new URL(url);
         const isHttps = parsedUrl.protocol === 'https:';
@@ -49,7 +50,7 @@ export function nativeFetchStream(url: string, options: RequestOptions = {}): Pr
         };
 
         const req = lib.request(reqOptions, (res) => {
-            resolve({ status: res.statusCode || 0, stream: res });
+            resolve({ status: res.statusCode || 0, headers: res.headers, stream: res });
         });
 
         req.on('error', (err) => reject(err));
@@ -100,6 +101,7 @@ export function nativeFetch(url: string, options: RequestOptions = {}): Promise<
                     ok: status >= 200 && status < 300,
                     status,
                     statusText: res.statusMessage || '',
+                    headers: res.headers,
                     json: () => Promise.resolve(JSON.parse(bodyText)),
                     text: () => Promise.resolve(bodyText),
                 };

@@ -24,41 +24,56 @@ export function resolveCompatibilityModel(requested: string | undefined | null):
     if (!requested || typeof requested !== 'string') return DEFAULT_MODEL;
     
     const lower = requested.toLowerCase();
+    const normalized = lower.includes('/') ? lower.split('/').filter(Boolean).pop() || lower : lower;
     
     // 1. Exact matches for the 5 supported Antigravity slugs
-    if (lower === 'gemini-3-flash-agent') return 'gemini-3-flash-agent';
-    if (lower === 'gemini-3-flash') return 'gemini-3-flash';
-    if (lower === 'gemini-pro-agent') return 'gemini-pro-agent';
-    if (lower === 'gemini-3.5-flash-low') return 'gemini-3.5-flash-low';
-    if (lower === 'gemini-3.1-flash-lite') return 'gemini-3.1-flash-lite';
+    if (normalized === 'gemini-3-flash-agent') return 'gemini-3-flash-agent';
+    if (normalized === 'gemini-3-flash') return 'gemini-3-flash';
+    if (normalized === 'gemini-pro-agent') return 'gemini-pro-agent';
+    if (normalized === 'gemini-3.5-flash-low') return 'gemini-3.5-flash-low';
+    if (normalized === 'gemini-3.1-flash-lite') return 'gemini-3.1-flash-lite';
     
     // 2. Map Gemini 3 / 3.5 friendly names
-    if (lower === 'gemini-3.5-flash' || lower === 'gemini-3.5-flash-preview') {
+    if (normalized === 'gemini-3.5-flash' || normalized === 'gemini-3.5-flash-preview') {
         return 'gemini-3-flash-agent'; // Gemini 3.5 Flash (High)
     }
-    if (lower === 'gemini-3-flash-preview') {
+    if (normalized === 'gemini-3-flash-preview') {
         return 'gemini-3-flash'; // Gemini 3 Flash
     }
-    if (lower === 'gemini-3-pro-preview' || lower === 'gemini-3.1-pro-preview' || lower === 'gemini-3.5-pro' || lower === 'gemini-3.5-pro-preview' || lower === 'gemini-3-pro') {
+    if (normalized === 'gemini-3-pro-preview' || normalized === 'gemini-3.1-pro-preview' || normalized === 'gemini-3.5-pro' || normalized === 'gemini-3.5-pro-preview' || normalized === 'gemini-3-pro') {
         return 'gemini-pro-agent'; // Gemini 3.1 Pro (High)
     }
+
+    // 3. Provider-style ids from routers such as OpenRouter keep the provider
+    // prefix client-side, but route by the terminal model slug internally.
+    if (/^(gpt-5|gpt-4\.1|o[1-9]|claude-(opus|sonnet))/.test(normalized)) {
+        if (normalized.includes('mini') || normalized.includes('nano') || normalized.includes('haiku')) {
+            return 'gemini-3.1-flash-lite';
+        }
+        return 'gemini-pro-agent';
+    }
+    if (normalized.startsWith('gpt-4o') || normalized.startsWith('gpt-3.5') || normalized.includes('haiku')) {
+        return normalized.includes('mini') || normalized.includes('haiku')
+            ? 'gemini-3.1-flash-lite'
+            : 'gemini-3-flash-agent';
+    }
     
-    // 3. Prevent any 2.5 or older/other legacy models from being used, mapping them to 3x equivalents.
+    // 4. Prevent any 2.5 or older/other legacy models from being used, mapping them to 3x equivalents.
     // Pro models -> gemini-pro-agent (Gemini 3.1 Pro High)
-    if (lower.includes('pro')) {
+    if (normalized.includes('pro')) {
         return 'gemini-pro-agent';
     }
     // Flash Lite/8B models -> gemini-3.1-flash-lite (Gemini 3.1 Flash Lite)
-    if (lower.includes('flash-lite') || lower.includes('lite') || lower.includes('8b')) {
+    if (normalized.includes('flash-lite') || normalized.includes('lite') || normalized.includes('8b')) {
         return 'gemini-3.1-flash-lite';
     }
     // Flash models -> gemini-3-flash-agent (Gemini 3.5 Flash High)
-    if (lower.includes('flash')) {
+    if (normalized.includes('flash')) {
         return 'gemini-3-flash-agent';
     }
     
-    // 4. Default fallback for any other gemini- or general requests
-    if (lower.startsWith('gemini-')) {
+    // 5. Default fallback for any other gemini- or general requests
+    if (normalized.startsWith('gemini-')) {
         return DEFAULT_MODEL;
     }
     
@@ -91,18 +106,27 @@ export function listCompatibilityModelIds(): string[] {
     push('gemini-3.1-flash-lite');
 
     // Common OpenAI aliases
+    push('gpt-5');
+    push('gpt-5-mini');
+    push('gpt-4.1');
+    push('gpt-4.1-mini');
     push('gpt-4o');
     push('gpt-4o-mini');
     push('gpt-4-turbo');
     push('gpt-4');
     push('gpt-3.5-turbo');
+    push('openai/gpt-5');
+    push('openai/gpt-4o');
 
     // Common Anthropic aliases
+    push('claude-sonnet-4-5');
+    push('claude-opus-4-1');
     push('claude-3-5-sonnet-latest');
     push('claude-3-5-haiku-latest');
     push('claude-3-opus-latest');
     push('claude-3-sonnet-latest');
     push('claude-3-haiku-latest');
+    push('anthropic/claude-sonnet-4-5');
 
     return Array.from(seen);
 }

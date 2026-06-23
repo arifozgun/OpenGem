@@ -94,7 +94,7 @@ export async function discoverProjectId(accessToken: string): Promise<string> {
     }
 }
 
-export async function exchangeCodeForTokens(code: string, verifier: string) {
+export async function exchangeCodeForTokens(code: string, verifier: string, redirectUri = OAUTH_CONFIG.redirectUri) {
     const response = await nativeFetch(OAUTH_CONFIG.tokenUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -103,7 +103,7 @@ export async function exchangeCodeForTokens(code: string, verifier: string) {
             client_secret: OAUTH_CONFIG.clientSecret,
             code,
             code_verifier: verifier,
-            redirect_uri: OAUTH_CONFIG.redirectUri,
+            redirect_uri: redirectUri,
             grant_type: 'authorization_code',
         }).toString(),
     });

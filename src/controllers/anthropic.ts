@@ -17,6 +17,7 @@ import {
 } from '../services/adapters/anthropic';
 import { resolveCompatibilityModel } from '../services/adapters/model-aliases';
 import { createAccountAffinityContext } from '../services/account-affinity';
+import { getRequestLogMetadata } from '../services/access-log';
 import { generateContentWithAccounts, streamGeminiWithSink } from './chat';
 
 function sendAnthropicError(res: Response, status: number, message: string, type = 'invalid_request_error'): void {
@@ -38,14 +39,17 @@ export async function handleAnthropicMessages(req: Request, res: Response): Prom
 
     const requestedModel = translated.model;
     const geminiModel = resolveCompatibilityModel(requestedModel);
+    const body = req.body as AnthropicMessageRequest;
+    const sessionId = typeof body?.session_id === 'string' ? body.session_id : undefined;
     const affinity = createAccountAffinityContext({
         req,
         model: requestedModel,
         contents: translated.contents,
         systemInstruction: translated.systemInstruction,
-        explicitUserId: typeof req.body?.metadata?.user_id === 'string' ? req.body.metadata.user_id : undefined,
-        explicitUserSource: 'anthropic-user',
+        explicitUserId: sessionId || (typeof body?.metadata?.user_id === 'string' ? body.metadata.user_id : undefined),
+        explicitUserSource: sessionId ? 'openrouter-session' : 'anthropic-user',
     });
+    const requestMeta = () => getRequestLogMetadata(req);
 
     try {
         if (translated.stream) {
@@ -65,6 +69,7 @@ export async function handleAnthropicMessages(req: Request, res: Response): Prom
                 res,
                 sink,
                 affinity,
+                requestMeta,
             });
             return;
         }
@@ -78,6 +83,7 @@ export async function handleAnthropicMessages(req: Request, res: Response): Prom
             translated.toolConfig,
             undefined,
             affinity,
+            requestMeta,
         );
 
         if (!result) {

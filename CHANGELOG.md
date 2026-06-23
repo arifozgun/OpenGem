@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-06-01
+
+### Added
+- **Adaptive Account Balancer** — Added a runtime account planner that scores each Google account by affinity, local in-flight load, request-window headroom, success/failure streaks, recent rate-limit penalty, latency, cooldown/probe state and Pro status before selecting an upstream account. (`src/services/account-balancer.ts`, `src/controllers/chat.ts`)
+- **Configurable Balancing Defaults** — Added conservative `OPENGEM_*` knobs for per-account request windows, per-account in-flight limits and global concurrency caps without persisting new secrets. (`src/services/account-balancer.ts`, `src/services/concurrency.ts`, `.env.example`, `README.md`)
+- **Balancer Documentation** — Documented adaptive balancing behavior in the README and dashboard Documentation page. (`README.md`, `app/opengem-console.jsx`)
+- **OpenAI Responses compatibility** — Added `POST /v1/responses` with non-streaming and SSE streaming support for current OpenAI SDKs, including text/image input normalization, function tools, structured JSON output configuration, usage mapping and `output_text` responses. (`src/controllers/openai-responses.ts`, `src/services/adapters/openai-responses.ts`, `src/index.ts`)
+- **OpenRouter-style compatibility** — Added `/api/v1` route aliases, `models[]` fallback-shape parsing, `provider` hint acceptance, `session_id` / `x-session-id` affinity, provider-prefixed model normalization and `supported_parameters` metadata on model discovery. (`src/controllers/openai.ts`, `src/controllers/anthropic.ts`, `src/services/account-affinity.ts`, `src/services/adapters/model-aliases.ts`)
+- **Compatibility documentation** — The Documentation page now surfaces Responses, OpenRouter-style aliases, router payload fields and session-affinity options while preserving mobile-safe wrapping. (`app/opengem-console.jsx`, `README.md`)
+- **Runtime home support** — Added `OPENGEM_HOME` path handling so installs can keep `config.json`, `.env` and local SQLite data outside the package directory. (`src/services/paths.ts`, `src/services/config.ts`, `src/services/sqliteDb.ts`, `README.md`)
+- **Admin Chat History** — Dashboard chats now persist to the selected database backend, can be resumed later, and support message forking, copying and editing a sent user turn before regenerating from that point. (`src/services/database.ts`, `src/services/sqliteDb.ts`, `src/services/firebase.ts`, `src/index.ts`, `app/opengem-console.jsx`)
+- **Dashboard Appearance Controls** — Settings now includes light/dark/system theme selection plus an adjustable highlight color with the existing orange as the default. (`app/globals.css`, `app/layout.jsx`, `app/opengem-console.jsx`)
+- **Incoming server Logs page** — Added a dedicated Logs page for incoming API traffic with request IDs, levels, time, URL, user API surface, method, status, execution time, user agent, optional remote IP and redacted OpenGem keys, plus search, timeline charting and copyable JSON details. (`src/services/access-log.ts`, `src/index.ts`, `app/opengem-console.jsx`)
+- **Requests page timeline/search** — Renamed the former Request Logs console page to Requests and added search, timeline charting, richer request metadata and copyable JSON detail output. (`app/opengem-console.jsx`, `app/requests/page.jsx`, `src/services/database.ts`, `src/services/sqliteDb.ts`, `src/services/firebase.ts`)
+
+### Security
+- **Email two-factor authentication** — SMTP settings in the admin Settings page now enable email-based 2FA automatically. After valid admin credentials, OpenGem sends a short-lived code and only issues the signed admin session after verification. SMTP secrets are encrypted in `config.json`. (`src/services/two-factor.ts`, `src/services/mail.ts`, `src/services/config.ts`, `src/index.ts`, `app/opengem-console.jsx`)
+- **Admin CSRF protection** — Admin POST/PUT/DELETE routes now require a CSRF token bound to the signed admin JWT and mirrored in a same-site cookie, blocking cross-origin form or XHR attempts from reusing the admin session. (`src/middleware/auth.ts`, `src/index.ts`, `app/opengem-console.jsx`)
+- **Admin session revocation** — Credential rotation now advances an admin `sessionVersion`, invalidating older admin JWTs instead of only clearing the current browser cookie. (`src/services/config.ts`, `src/middleware/auth.ts`, `src/index.ts`)
+- **Tighter admin origin controls** — Admin/data endpoints now reject browser requests whose `Origin` does not match the OpenGem origin, and admin responses are marked `no-store`. (`src/index.ts`)
+- **Safer CORS and proxy defaults** — Production wildcard CORS no longer enables credentialed browser requests, and `TRUST_PROXY` defaults to `loopback` to reduce `X-Forwarded-For` spoofing risk on directly exposed instances. (`src/index.ts`, `.env.example`, `README.md`)
+- **Safer multimodal compatibility input** — OpenAI/Anthropic compatibility adapters now reject unsupported local or non-HTTP image URL schemes instead of forwarding arbitrary URI schemes upstream. (`src/services/adapters/openai.ts`, `src/services/adapters/anthropic.ts`, `src/services/adapters/openai-responses.ts`)
+- **Markdown XSS hardening** — Dashboard chat Markdown rendered from model output is sanitized with an allowlist before `dangerouslySetInnerHTML`, stripping scripts, event handlers, unsafe URLs, styles, forms and embedded active content. (`app/opengem-console.jsx`)
+- **Bounded admin chat persistence** — Chat history writes are admin-only, CSRF-protected, ID-validated and size-limited before being saved to SQLite or Firestore. (`src/index.ts`)
+
+### Fixed
+- **Retry-After Cooldowns** — Upstream `Retry-After` headers from non-streaming and streaming Gemini calls now extend account cooldowns safely, reducing repeated 429 pressure on recovering accounts. (`src/services/http.ts`, `src/services/account-cooldown.ts`, `src/controllers/chat.ts`)
+- **Chat history opening** — Opening a chat tile whose conversation no longer exists now removes the stale entry from history and starts a fresh chat instead of surfacing a raw 404 error. (`app/opengem-console.jsx`)
+
+### Changed
+- **Account Rotation Planning** — Replaced the direct LRU-plus-skip loop with a planned candidate list shared by streaming and non-streaming calls, so local load, cooldowns and affinity are resolved before tokens are refreshed or upstream requests are sent. (`src/controllers/chat.ts`, `src/services/rate-limiter.ts`)
+- **Conservative request limits** — The default JSON/urlencoded body limit is now `10mb` via `OPENGEM_BODY_LIMIT`, with pre-body rate limiting on public API and setup/login routes to reduce unauthenticated memory pressure. (`src/index.ts`, `.env.example`, `README.md`)
+- **Admin data bounds** — Request log reads are clamped to 500 rows and API key names are limited to 80 characters to keep dashboard and storage surfaces predictable. (`src/index.ts`)
+- **Configurable log retention** — Settings now controls max retention days and optional IP storage separately for Requests and Logs. IP logging remains off by default. (`src/services/config.ts`, `src/services/access-log.ts`, `app/opengem-console.jsx`)
+- **npm package metadata** — Added the `files` and `prepack` metadata needed for an installable package while keeping the server entry point at `app.js`. (`package.json`, `package-lock.json`)
+- **Settings and Chat Layout** — Settings has been reorganized into responsive interface/security/server sections, and the chat composer was redesigned with a focus-highlighted surface, an inline keyboard hint and a labeled send action. (`app/opengem-console.jsx`)
+- **Compact Requests table** — The Requests history table drops the Request ID column and truncates the Question and Answer cells; the full record stays available in the request detail dialog. (`app/opengem-console.jsx`)
+- Incremented package version to `0.6.0`.
+
 ## [0.5.1] - 2026-05-28
 
 ### Added

@@ -34,10 +34,20 @@ The following are **out of scope**:
 - Issues in upstream Google APIs.
 - Social engineering attacks.
 
+## Operator Security
+
+- Keep `OPENGEM_HOME`, `.env`, `config.json` and `data/` readable only by the OpenGem service user.
+- Configure SMTP in Settings to enable email-based admin 2FA. If SMTP delivery fails, OpenGem does not issue the admin session.
+- IP logging for Logs and Requests is disabled by default. Enable it only when your retention policy allows storing client IP addresses.
+- Treat CLI access as administrative access. Anyone who can run `opengem` inside the runtime home can manage local accounts, keys and logs.
+- The dashboard and CLI update flow uses fixed Git/npm commands. Review local changes before updating from GitHub on production servers.
+- Back up `OPENGEM_HOME` before switching database backends or running updates.
+
 ## Supported Versions
 
 | Version | Supported |
 |---------|-----------|
+| 0.6.x   | ✅        |
 | 0.5.x   | ✅        |
 
 ## Acknowledgments
